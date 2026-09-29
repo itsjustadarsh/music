@@ -1,0 +1,14 @@
+run_name: ast_baseline
+model: ast
+epochs: 3
+batch_size: 8
+lr: 0.00001
+weight_decay: 0.00001
+optimizer: adamw
+scheduler: cosine
+freeze_encoder_layers: 0
+pitch_shift: false
+time_stretch: false
+max_subclips_per_track: 2
+seed: 42
+early_stopping_patience: 2

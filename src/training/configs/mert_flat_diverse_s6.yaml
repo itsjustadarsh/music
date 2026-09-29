@@ -1,0 +1,14 @@
+run_name: mert_flat_diverse_s6
+model: mert_flat_probe
+epochs: 50
+batch_size: 128
+lr: 0.00025
+weight_decay: 0.0015
+optimizer: adamw
+scheduler: cosine
+proj_size: 512
+dropout: 0.55
+seed: 600
+early_stopping_patience: 10
+label_smoothing: 0.2
+mixup_alpha: 0.35

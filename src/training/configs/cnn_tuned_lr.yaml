@@ -1,0 +1,11 @@
+run_name: cnn_tuned_lr
+model: cnn
+epochs: 35
+batch_size: 32
+lr: 0.0003
+weight_decay: 0.00001
+optimizer: adamw
+scheduler: cosine
+augment_spec: true
+seed: 42
+early_stopping_patience: 10

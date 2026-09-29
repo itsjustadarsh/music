@@ -1,0 +1,16 @@
+run_name: mert_probe_cliprandom
+model: mert_probe
+epochs: 40
+batch_size: 128
+lr: 0.0005
+weight_decay: 0.0001
+optimizer: adamw
+scheduler: cosine
+proj_size: 1024
+dropout: 0.4
+learn_layer_weights: true
+seed: 42
+early_stopping_patience: 8
+split_mode: random_clip
+label_smoothing: 0.1
+mixup_alpha: 0.2

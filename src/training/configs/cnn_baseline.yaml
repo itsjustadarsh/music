@@ -1,0 +1,11 @@
+run_name: cnn_baseline
+model: cnn
+epochs: 25
+batch_size: 64
+lr: 0.001
+weight_decay: 0.0
+optimizer: adam
+scheduler: none
+augment_spec: false
+seed: 42
+early_stopping_patience: 6

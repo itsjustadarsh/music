@@ -1,0 +1,45 @@
+# Environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets
+.env
+.spotify_token_cache*
+
+# Data (never commit raw/processed audio or archives) -- anchored to repo root
+# so this doesn't also match src/data/ or tests/data/. Ignore contents, not the
+# directory itself, so the .gitkeep negation below can still take effect.
+/data/*
+!/data/.gitkeep
+
+# Training outputs / checkpoints
+outputs/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# AI / Claude / agent related files
+.claude/
+.cursorrules
+.cursor/
+.aider*
+.copilot/
+.github/copilot/
+*.prompt
+CLAUDE.md
+.claude.json
+
+# Docs figures generated at eval time (kept out unless explicitly added)
+docs/figures/*.png

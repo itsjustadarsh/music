@@ -1,0 +1,11 @@
+run_name: cnn_augmented
+model: cnn
+epochs: 30
+batch_size: 64
+lr: 0.001
+weight_decay: 0.00001
+optimizer: adam
+scheduler: cosine
+augment_spec: true
+seed: 42
+early_stopping_patience: 8

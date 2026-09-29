@@ -1,0 +1,14 @@
+run_name: mert_flat_probe_v2
+model: mert_flat_probe
+epochs: 50
+batch_size: 64
+lr: 0.0001
+weight_decay: 0.01
+optimizer: adamw
+scheduler: cosine
+proj_size: 256
+dropout: 0.6
+seed: 42
+early_stopping_patience: 12
+label_smoothing: 0.15
+mixup_alpha: 0.4

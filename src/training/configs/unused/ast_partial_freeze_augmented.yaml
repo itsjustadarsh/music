@@ -1,0 +1,14 @@
+run_name: ast_partial_freeze_augmented
+model: ast
+epochs: 3
+batch_size: 8
+lr: 0.00003
+weight_decay: 0.00001
+optimizer: adamw
+scheduler: cosine
+freeze_encoder_layers: 6
+pitch_shift: true
+time_stretch: true
+max_subclips_per_track: 2
+seed: 42
+early_stopping_patience: 2
