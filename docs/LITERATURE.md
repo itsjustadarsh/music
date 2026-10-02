@@ -72,7 +72,7 @@ measured cost of the alternatives so a future reader can do the placement we can
 
 ---
 
-## 3. Three circulating "FMA-small records" that do not survive checking
+## 3. Four circulating "FMA-small records" that do not survive checking
 
 Kept here with reasons, rather than silently omitted — a reader who has seen these numbers
 elsewhere deserves to know why they are absent from the registry above.
@@ -111,6 +111,13 @@ chose 800 samples as the training set and the remaining 200 samples as the test 
 That a leaderboard absorbed a binary-subtask number into an 8-way benchmark is, in
 miniature, the same failure this project documents: a number detached from the protocol
 that produced it travels further than it should.
+
+### "Lee, Lee, Park & Lee, 51.2%"
+
+Carried in our own registry for a long time on the strength of a row in Bian et al.'s
+comparison table. The underlying citation could not be resolved to any paper reporting an
+fma_small number. Dropped rather than guessed at — and noted here because it is the one
+unverifiable row that was *ours*, inherited by exactly the mechanism described above.
 
 ---
 

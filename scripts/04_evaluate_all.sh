@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Evaluates every trained run, builds the published-baseline comparison table,
-# and patches docs/RESULTS.md with the real numbers automatically.
+# Evaluates every trained run, then regenerates docs/RESULTS.md and
+# docs/EXPERIMENT_LOG.md from outputs/. Those two files are written in full and
+# must never be hand-edited.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source .venv/bin/activate
@@ -23,10 +24,7 @@ for run_name in "${RUN_NAMES[@]}"; do
   python -m src.evaluation.metrics --run "$run_name"
 done
 
-echo "==> Building published-baseline comparison"
-python -m src.evaluation.compare_baselines --runs "${RUN_NAMES[@]}"
-
-echo "==> Updating docs/RESULTS.md with real numbers"
+echo "==> Regenerating docs/RESULTS.md and docs/EXPERIMENT_LOG.md"
 python scripts/update_results.py
 
-echo "Done. See docs/RESULTS.md, outputs/comparison_table.md, and docs/figures/*.png"
+echo "Done. See docs/RESULTS.md, docs/EXPERIMENT_LOG.md and docs/figures/*.png"

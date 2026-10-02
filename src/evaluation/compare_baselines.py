@@ -1,4 +1,12 @@
-"""Compare our trained models against published FMA-small genre classification results.
+"""The registry of published FMA-small results, and the claims excluded from it.
+
+This module is **data, not a script**. It used to also render
+`outputs/comparison_table.md`, which has been retired: that table duplicated
+`docs/RESULTS.md` §2 row for row, and a second generated file carrying the same
+numbers is precisely the arrangement that let this project's figures drift in the
+first place. `scripts/update_results.py` imports `PUBLISHED_BASELINES` and renders
+the one comparison table that exists. `docs/LITERATURE.md` carries the prose audit,
+including the reasons behind `EXCLUDED_CLAIMS`.
 
 Every row below was read from the paper's own text, not from a secondary summary, and
 the `protocol` field records what the paper SAYS rather than what its accuracy implies
@@ -26,24 +34,10 @@ notebook. That was wrong in both directions:
     not because any author claims it is. Bian et al. later reprint it as
     "SVM (Defferrard, 2017) 54.8", which is how the attribution drifted.
 
-Usage:
-    python -m src.evaluation.compare_baselines --runs cnn_augmented ast_baseline
-
-Reads outputs/<run>/eval_metrics.json for each run given, and writes
-outputs/comparison_table.md (or .json) with the full, un-cherry-picked comparison
--- every baseline is listed regardless of whether we beat it.
 """
 from __future__ import annotations
 
-import argparse
-import json
-import logging
 from dataclasses import dataclass
-
-from src.config import OUTPUT_DIR
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -227,149 +221,3 @@ EXCLUDED_CLAIMS: list[tuple[str, float, str]] = [
         "fma_small number; dropped rather than guessed at.",
     ),
 ]
-
-
-def load_our_results(run_names: list[str]) -> list[dict]:
-    results = []
-    for run_name in run_names:
-        eval_path = OUTPUT_DIR / run_name / "eval_metrics.json"
-        if not eval_path.exists():
-            log.warning("No eval_metrics.json for run %r (run src.evaluation.metrics first); skipping", run_name)
-            continue
-        metrics = json.loads(eval_path.read_text())
-        # eval_metrics.json nests clip_level/track_level since track-level scoring was
-        # added; fall back to the flat shape so older result files still load.
-        track = metrics.get("track_level", metrics)
-        clip = metrics.get("clip_level", track)
-        # Read the run's real split, never assume it. A leaky run listed as
-        # "artist-filtered" would be exactly the substitution this project documents.
-        cfg_path = OUTPUT_DIR / run_name / "config.json"
-        split_mode = "official"
-        if cfg_path.exists():
-            split_mode = json.loads(cfg_path.read_text()).get("split_mode", "official")
-        results.append(
-            {
-                "run_name": run_name,
-                "split_mode": split_mode,
-                "accuracy_pct": track.get("accuracy", 0) * 100,
-                "macro_f1_pct": track.get("macro_f1", 0) * 100,
-                "clip_accuracy_pct": clip.get("accuracy", 0) * 100,
-                "clip_macro_f1_pct": clip.get("macro_f1", 0) * 100,
-            }
-        )
-    return results
-
-
-OUR_PROTOCOL_LABEL = {
-    "official": "official artist-filtered",
-    "random_track": "random split over tracks (artists leak)",
-    "random_clip": "random split over 3s clips (recordings leak)",
-}
-
-
-def _baseline_row(b: PublishedBaseline) -> str:
-    f1_str = f"{b.macro_f1_pct:.1f}%" if b.macro_f1_pct is not None else "--"
-    return (
-        f"| {b.citation} ({b.year}) -- {b.method} | {b.accuracy_pct:.1f}% | {f1_str} "
-        f"| {b.stated_protocol} | {b.eval_unit} | {b.source_url} |"
-    )
-
-
-def build_comparison_table(our_results: list[dict]) -> str:
-    """One registry, ordered by accuracy, with what each paper discloses alongside.
-
-    We deliberately do not sort published numbers into "clean" and "leaky" buckets and
-    rank ourselves against the clean one. That framing assumes we can tell which bucket
-    each paper belongs in, and the whole finding here is that we usually cannot: of the
-    external works in this registry, none states artist-filtered evaluation in prose,
-    one states clip-random, one states a track-level random split, and the rest give a
-    ratio or nothing. Sorting by inferred protocol would launder an assumption into a
-    result.
-
-    So: one table, accuracy-ordered, with a prose column recording what the paper
-    actually says. The reader can see for themselves which rows are comparable to ours.
-    `outputs/protocol_leakage_table.md` (from scripts/protocol_leakage_analysis.py)
-    carries the measured cost of each protocol choice.
-    """
-    header = "| Model | Accuracy | Macro-F1 | Stated protocol | Eval unit | Source |"
-    divider = "|---|---|---|---|---|---|"
-
-    lines = [
-        "## Published FMA-small results, with what each paper discloses",
-        "",
-        "Our numbers are track-level: per-episode probabilities averaged within a track,",
-        "which is the unit published work reports. The `Stated protocol` column records",
-        "what each source's own text says -- never what its accuracy implies, since",
-        "inferring one from the other would assume the conclusion.",
-        "",
-        header,
-        divider,
-    ]
-    rows: list[tuple[float, str]] = [
-        (
-            r["accuracy_pct"],
-            f"| **Ours -- {r['run_name']}** | **{r['accuracy_pct']:.1f}%** | "
-            f"**{r['macro_f1_pct']:.1f}%** | "
-            f"**{OUR_PROTOCOL_LABEL.get(r['split_mode'], r['split_mode'])}** | track | this work |",
-        )
-        for r in our_results
-    ]
-    rows += [(b.accuracy_pct, _baseline_row(b)) for b in PUBLISHED_BASELINES]
-    lines += [row for _, row in sorted(rows, key=lambda x: -x[0])]
-
-    n_af = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "artist_filtered")
-    n_cr = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "clip_random")
-    n_rt = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "random_track")
-    n_un = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "unspecified")
-    # Only artist-filtered runs of ours are eligible to be "our best". Quoting a
-    # random_clip run here would be the same error we document in everyone else.
-    best = max((r["accuracy_pct"] for r in our_results if r["split_mode"] == "official"), default=0.0)
-    comparable = [b for b in PUBLISHED_BASELINES if b.protocol == "artist_filtered"]
-    best_comparable = max((b.accuracy_pct for b in comparable), default=0.0)
-
-    lines += [
-        "",
-        f"Of {len(PUBLISHED_BASELINES)} external results: {n_af} artist-filtered (and that "
-        f"one only by construction, not by authorial claim), {n_cr} stated clip-random, "
-        f"{n_rt} stated track-level random, {n_un} undisclosed.",
-        "",
-        f"Our best run is {best:.1f}%. The only artist-filtered number it can honestly be "
-        f"compared against is {best_comparable:.1f}%, a margin of "
-        f"{best - best_comparable:+.1f}pp. We do not claim a state of the art: the higher "
-        "numbers in this table have undisclosed protocols, and the measured spread between "
-        "protocols (see `outputs/protocol_leakage_table.md`) is larger than the spread "
-        "between the architectures.",
-        "",
-        "## Circulating claims excluded from the registry",
-        "",
-        "Kept here with reasons rather than silently dropped -- a reader who has seen these",
-        "elsewhere deserves to know why they are absent.",
-        "",
-        "| Claim | Reported | Why excluded |",
-        "|---|---|---|",
-    ]
-    for claim, pct, reason in EXCLUDED_CLAIMS:
-        lines.append(f"| {claim} | {pct:.2f}% | {reason} |")
-
-    return "\n".join(lines) + "\n"
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runs", nargs="+", required=True, help="Run names to include (subdirs of outputs/)")
-    parser.add_argument("--out", default=str(OUTPUT_DIR / "comparison_table.md"))
-    args = parser.parse_args()
-
-    our_results = load_our_results(args.runs)
-    if not our_results:
-        raise SystemExit("No evaluated runs found -- run src.evaluation.metrics on at least one run first.")
-
-    table = build_comparison_table(our_results)
-    with open(args.out, "w") as f:
-        f.write(table)
-    log.info("Wrote comparison table to %s", args.out)
-    print(table)
-
-
-if __name__ == "__main__":
-    main()
