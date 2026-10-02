@@ -1,216 +1,185 @@
 # Methodology
 
-## 1. Genre classification
+How every number in this project is produced. **No results live here** — see
+`docs/RESULTS.md` and `outputs/protocol_leakage_table.md`, which are generated. This file
+defines what those numbers mean.
 
-### 1.1 Data & split
+---
 
-Trained and evaluated exclusively on **FMA-small** (8,000 tracks, 8 balanced genres), using the
-dataset's own official train/validation/test split from `tracks.csv` (not a random resplit) so
-accuracy numbers are comparable to published FMA-small results. See `docs/DATA_CARD.md` for
-dataset details and `src/data/splits.py` for the split-loading code.
+## 1. Data
 
-Each 30-second track is cut into ten non-overlapping 3-second sub-clips (standard practice in
-FMA/GTZAN-style genre classification literature, since 3s windows give ~10x more training examples
-per track while still containing enough signal to be genre-discriminative). At inference time on a
-new (non-FMA) clip, the same 3-second windowing is applied (`src/api/main.py` takes the first 3s of
-an uploaded file; a production system would average predictions over multiple windows).
+**FMA-small** (Defferrard et al., 2017): 8,000 tracks, 8 balanced genres, ~30s per track.
+See `docs/DATA_CARD.md` for the full card and `src/data/splits.py` for the loading code.
 
-### 1.1b Evaluation protocol (and why published FMA-small numbers are not all comparable)
+Each track is cut into ten non-overlapping **3-second episodes**, standard practice in the
+FMA/GTZAN genre literature: 3s windows give ~10× more training examples per track while
+still carrying genre-discriminative signal. This choice is not free, and it is revisited in
+§5 — genre is partly a long-timescale property and 3s may be a ceiling on what any model
+here can see.
 
-Two independent choices decide what an "FMA-small accuracy" actually means, and the
-literature does not make them consistently. Stating both is a prerequisite for any
-comparison in `docs/RESULTS.md`.
+| | tracks | episodes |
+|---|---|---|
+| train | 6,400 | ~64,000 |
+| validation | 800 | ~8,000 |
+| test | 800 | ~8,000 |
 
-**Split protocol.** FMA's official split applies an *artist filter*: an artist's tracks
-appear in exactly one of train/validation/test. The FMA paper is explicit that dropping
-this is harmful -- using songs from the same artist in both train and test "leads to
-over-optimistic accuracy", because the model can recognise the artist's production
-signature instead of the genre. Ashraf et al. (2025), who report 68.5%, instead split
-*3-second clips* 8:1:1, which places clips of the **same track** on both sides of the
-split -- a stronger form of the same leakage.
+---
 
-This is not a binary, and treating it as one would mis-score most of the literature.
-Most papers state a ratio ("random 8:1:1") without naming the *unit* it applies to, so
-we run a three-rung ladder (`split_mode` in `src/training/dataset.py`):
+## 2. The two choices that decide what "FMA-small accuracy" means
 
-| Mode | Definition | What leaks |
+Two independent decisions determine what an accuracy number on this dataset actually
+measures, and the literature does not make either one consistently
+(`docs/LITERATURE.md`). Stating both is a precondition for any comparison.
+
+### 2.1 Split protocol — and why we use the artist-filtered one
+
+FMA's official split applies an **artist filter**: every track by a given artist lands in
+exactly one of train/validation/test. The FMA authors are explicit that dropping this is
+harmful — using songs from the same artist on both sides "leads to over-optimistic
+accuracy".
+
+The reason is that an artist is a bundle of confounds that are *not genre*: a production
+signature, a mastering chain, a recording space, a particular drum machine, a singer's
+timbre, often a single mixing engineer across an entire catalogue. A model rewarded for
+recognising any of those is being scored on a task adjacent to the one we claim to be
+measuring. A classifier that identifies the artist and recalls their genre has solved
+retrieval, not classification — and it will fail on the first track by an artist it has
+never heard, which is the only case anyone cares about in deployment.
+
+This is not binary, and treating it as binary would mis-score most of the literature. Most
+papers state a ratio ("random 8:1:1") without naming the **unit** it applies to, and the
+unit is where the leakage lives. So we run a **three-rung ladder**, implemented as
+`split_mode` in `src/training/dataset.py`:
+
+| Mode | Definition | What leaks into test |
 |---|---|---|
 | `official` | FMA's shipped artist-filtered split | nothing |
 | `random_track` | random 8:1:1 over whole tracks, seed 42 | artist and album identity |
-| `random_clip` | random 8:1:1 over individual 3s clips, seed 42 | artist, album, **and the recording itself** |
+| `random_clip` | random 8:1:1 over individual 3s episodes, seed 42 | artist, album, **and the recording itself** |
 
-Only `official` may produce a headline number; the other two are diagnostic instruments,
-run on identical data, hyperparameters and epoch budgets so the only varying factor is the
-split (`scripts/protocol_leakage_analysis.py`). Across eight architectures the two leakier
-rungs cost +12.8pp and a further +20.0pp respectively.
+The middle rung is the one the literature does not report, and it is the one that makes
+the ladder informative. Without it, a paper stating "random 8:1:1" can only be scored
+against artist-filtered, which overstates its exposure if it actually split whole tracks.
+With it, the two failures separate and can be priced independently.
 
-**Evaluation unit.** We train on 3-second episodes but a *track* is the thing being
-classified. Scoring per episode answers a different and easier-to-get-wrong question
-than scoring per track, and published work generally reports the latter. We aggregate by
-averaging per-episode probabilities within a track and taking the argmax
-(`aggregate_to_tracks` in `src/evaluation/metrics.py`); averaging beats majority voting
-because a vote discards the confidence that should break ties between disagreeing
-episodes. Both numbers are written to `eval_metrics.json`; the track-level one is what
-the paper reports, **including in the leakage ladder**, because every published figure we
-compare against is one prediction per track. The gap is 3-7 accuracy points depending on
-the model, so it is not a rounding detail: quoting an episode-level number beside a
-published track-level one once produced a spurious "reproduced within 1.1pp" claim in this
-project, which we withdrew (see `study/evaluation_protocols.md` §8). Two results can share
-a split and still be incomparable if one scores clips and the other scores songs.
+Why `random_clip` leaks so severely: episode 2 of a track (0:06–0:09) and episode 3
+(0:09–0:12) share a microphone, a room, a mix, a performance, usually a chord progression,
+and an identical frequency response. A model does not need to know what Folk sounds like to
+label episode 3 correctly if it has memorised episode 2 — it needs to recognise *that
+specific recording*. The task silently becomes audio fingerprinting.
 
-`src/evaluation/compare_baselines.py` therefore records a `protocol` and `eval_unit` for
-every published baseline and emits two separate tables. Where a paper does not state its
-protocol, it is marked `unspecified` rather than assumed comparable.
+**Only `official` may produce a headline number.** The other two rungs are diagnostic
+instruments. They are run on identical data, identical hyperparameters and identical epoch
+budgets, so the split is the only varying factor
+(`scripts/protocol_leakage_analysis.py`, `scripts/run_ladder_queue.sh`).
 
-### 1.2 Models
+### 2.2 Evaluation unit — track-level, everywhere
 
-**Baseline -- `GenreCNN` (`src/models/cnn.py`).** A 4-block 2D CNN (32→64→128→128 channels, each
-block conv+batchnorm+relu+maxpool) over 128-bin log-mel spectrograms, global-average-pooled and
-fed through a small classifier head. ~260K parameters -- deliberately modest so a full training run
-finishes in well under an hour on a laptop.
+We train on 3-second episodes, but a **track** is the thing being classified. Scoring per
+episode answers a different question than scoring per track, and published work generally
+reports the latter.
 
-**Modern architecture -- `ASTGenreClassifier` (`src/models/modern_model.py`).** A pretrained Audio
-Spectrogram Transformer (Gong, Chung & Glass, "AST: Audio Spectrogram Transformer," Interspeech
-2021), checkpoint `MIT/ast-finetuned-audioset-10-10-0.4593` (pretrained on AudioSet), fine-tuned
-with a fresh 8-class classification head. Optionally freezes the first N transformer encoder layers
-(`freeze_encoder_layers` config) to reduce the number of trainable parameters and speed up
-fine-tuning. Transfer learning from AudioSet is what makes it feasible to get a transformer to a
-competitive accuracy within a laptop-scale fine-tuning budget (a handful of epochs), rather than
-needing to pretrain a transformer from scratch on only 8,000 tracks.
+We aggregate by averaging per-episode probabilities within a track and taking the argmax
+(`aggregate_to_tracks` in `src/evaluation/metrics.py`). Averaging beats majority voting
+because a vote discards exactly the confidence that should break ties between disagreeing
+episodes.
 
-### 1.2b Epoch-Scheduled Conditional Fusion (ESCF)
+Both levels are written to each run's `eval_metrics.json`. **Every number this project
+reports is the track-level one, including in the leakage ladder**, because every published
+figure we compare against is one prediction per track: Liu et al. and Rai & Bhattacharjee
+feed a whole track and never segment; Bian et al. and Park et al. average segment outputs
+into "a single song-level prediction".
 
-The two backbones see the same audio very differently: `GenreCNN` is trained from
-scratch on 6,400 tracks of log-mel spectrogram, while the MERT probe reads a frozen
-self-supervised encoder pretrained on 20k hours of music. They therefore fail on
-different material -- and, we argue, on different *parts of the same track*. A dense
-percussive passage and a sparse harmonic one are not equally legible to the two. If that
-holds, the weight given to each backbone should not be one number per dataset, nor even
-one per track, but a function of the episode being classified.
+The gap between the two levels is 3–7 accuracy points depending on the model, so it is not
+a rounding detail. Quoting an episode-level number beside a published track-level one once
+produced a confident false conclusion in this very project; it is documented in
+`docs/NEGATIVE_RESULTS.md` §4 rather than quietly corrected. **Two results can share a
+split and still be incomparable if one scores clips and the other scores songs.**
 
-For a track `T` with episodes `e_1..e_n` on the shared 3-second grid:
+This rule is enforced mechanically, not by discipline: `scripts/protocol_leakage_analysis.py`
+and `scripts/update_results.py` read `eval_metrics.json → track_level.accuracy` and never
+`summary.json`, whose accuracy is episode-level. `LEAKAGE_LEVEL=episode` regenerates the
+episode-level view for inspection, but it is never the reported one.
 
-```
-h_i     = [h_A_i ; h_B_i ; conf(z_A_i) ; conf(z_B_i)]
-alpha_i = sigmoid(g(h_i))          # which backbone to trust, per episode
-beta_i  = softmax_i(a(h_i))        # which episodes matter, per track
-z_i     = alpha_i * z_A_i + (1 - alpha_i) * z_B_i
-z_T     = sum_i beta_i * z_i
-```
+---
 
-where `conf(.)` is (max probability, top-2 margin, negative entropy). Supervision is on
-`z_T` against the track label, so the loss optimises exactly the quantity reported.
+## 3. Models
 
-**The epoch curriculum.** The learned gate is unreliable early, when both the gate and
-the attention are near-random. A schedule interpolates it against a fixed prior:
+All architectures share one config-driven entrypoint, `src/training/train.py`, so that
+checkpointing, logging, early stopping and evaluation are identical across them — a
+precondition for the ladder, where any difference other than the split would confound the
+measurement.
 
-```
-lambda_t    = schedule(t / T_total)
-alpha_i(t)  = lambda_t * alpha_i + (1 - lambda_t) * alpha_prior
-```
+**From-scratch spectrogram models** (log-mel, 128 bins, `src/models/`):
+`GenreCNN` (4-block CNN, ~260K params), `GenreDenseNet` (DenseNet121, after Bian et al.),
+`DualCNN` (after Ashraf et al.), `CNNBiGRU` (after Kostrzewa et al.), `CapsNet` (dynamic
+routing), `CNNTransformer` (after CT-GateNet).
 
-Training therefore begins as a plain fixed-weight ensemble and hands control to the
-conditional gate as it becomes trustworthy. Note where the schedule acts: on *trust in
-the gate*, not on whether a backbone participates. An epoch-weighted hybrid of the form
-`w_t * m1 + (1 - w_t) * m2` with `w_t = max(0.8, t/T)` -- the form this design started
-from -- drives `m2`'s contribution to exactly zero at the final epoch, so the hybrid
-degenerates into `m1` at the moment it is evaluated, and `m1` never drops below weight
-0.8 regardless of which model is actually stronger. Scheduling gate trust keeps both
-backbones contributing at convergence while preserving the intent. That original curve is
-retained as the `supervisor` schedule and compared empirically rather than dismissed
-(`src/fusion/schedules.py`).
+**Frozen-embedding probes** (`src/models/embedding_probe.py` and the MERT probes). All
+backbone features are extracted once and cached to `data/embeddings/`, so a probe run
+touches no audio and no backbone — which is what makes the ladder affordable:
 
-**Relation to prior work.** MATT (2022) applies multiple-instance attention over music
-segments, but for a single model -- it weights `beta`, not `alpha`. The IISE Transactions
-(2026) optimisation ensemble learns weights to combine per-segment probabilities, but the
-weights are *global*, not conditioned on the segment's content. Standard ensembling learns
-a global weight across models. ESCF's claim is the conjunction neither has: weights that
-are **per-episode, input-conditional, and across heterogeneous backbones**. Rows A5-A7 of
-the ablation grid collapse ESCF down to each of those prior formulations on identical data
-and splits, so the contribution is measured rather than asserted; A8 must beat them with
-separated error bars for the claim to stand.
+| Backbone | Cached shape per episode | Pretraining |
+|---|---|---|
+| MERT-v1-95M | 13 × 768 (all layers) | 20k hours of music, self-supervised |
+| MERT-v1-330M | 25 × 1024 (all layers) | as above, larger |
+| BYOL-A (AudioNTT2020) | 2048 | general audio, self-supervised |
+| PANNs CNN14 | 2048 | AudioSet, supervised |
 
-**Cost.** Both backbones are frozen and their per-episode logits and embeddings are cached
-once (`src/evaluation/cache_outputs.py`), so a fusion run touches no audio and no backbone.
-That is what makes the grid affordable at 5 seeds per row, which in turn is what makes the
-variance estimates and paired significance tests (`src/evaluation/significance.py`)
-possible at all on laptop hardware.
+Probe heads over these differ in how they consume the layer axis: learned weighted sum,
+flat concatenation of all layers, multi-scale grouping, or attention over episodes.
 
-### 1.3 Training
+**Non-neural**: a tree-ensemble classifier over the same MERT features
+(`scripts/train_xgboost.py`), included on the ladder because an architecture family that
+shares nothing with the neural models is the strongest available test of whether protocol
+inflation is architecture-independent.
 
-`src/training/train.py` is a single entrypoint parameterized by a YAML config
-(`src/training/configs/*.yaml`) so both models share one training/checkpointing/logging code path.
-Per-epoch metrics are logged to `outputs/<run_name>/metrics.csv`; the checkpoint with the best
-validation macro-F1 is kept (`outputs/<run_name>/best.pt`) and used for final test-set evaluation
-and for serving via the API. Training auto-detects Apple Silicon's MPS backend
-(`torch.backends.mps.is_available()`), with `PYTORCH_ENABLE_MPS_FALLBACK=1` set by default so any
-op MPS doesn't support silently falls back to CPU instead of crashing.
+### Reimplementation fidelity, stated plainly
 
-Several configurations were prepared (not just one default run) to actually search for a
-competitive result, varying learning rate, optimizer, LR schedule, and augmentation:
-`cnn_baseline`, `cnn_augmented`, `cnn_tuned_lr`, `ast_baseline`, `ast_partial_freeze_augmented`.
+The spectrogram models above are reimplementations from published descriptions, and they
+are **not** faithful in every engineering detail — we drop the SVM stacking in Bian et al.
+and the gating in CT-GateNet, among others. They are on the ladder as *architecture
+families*, to show that protocol inflation is not confined to one model class.
 
-### 1.4 Augmentation
+They are explicitly **not** evidence about any paper's protocol. Our reimplementations
+undershoot the published numbers at `official` and overshoot at `random_track`, so the
+published figures land between our rungs — a pattern consistent with several explanations,
+including ones in which the paper did nothing wrong and our head is simply weaker than
+their model. The architecture-fidelity confound is the same size as the effect, so the
+comparison cannot adjudicate, and this project does not use it to. See
+`docs/NEGATIVE_RESULTS.md` §4.
 
-- **SpecAugment** (Park et al., "SpecAugment: A Simple Data Augmentation Method for Automatic
-  Speech Recognition," Interspeech 2019) -- random frequency and time masking applied directly to
-  cached log-mel spectrograms for the CNN (`src/training/augment.py::spec_augment`), train split only.
-- **Pitch-shift / time-stretch** -- applied to the raw 16kHz waveform before AST feature extraction
-  (`pitch_shift_waveform`, `time_stretch_waveform`), train split only, since these are naturally
-  waveform-level transformations.
+---
 
-### 1.5 Evaluation
+## 4. Training
 
-`src/evaluation/metrics.py` reports accuracy, macro-F1, per-genre precision/recall/F1/support, and
-a confusion matrix plot for a given run, evaluated on the held-out FMA-small test split.
-`src/evaluation/compare_baselines.py` places our results alongside >=8 published FMA-small results
-gathered by directly reading primary sources (see that module's docstring for the verification
-methodology and what was excluded as unverifiable) -- see `docs/RESULTS.md` for the full,
-un-cherry-picked table.
+One YAML config per run (`src/training/configs/*.yaml`), one entrypoint. Per-epoch metrics
+go to `outputs/<run>/metrics.csv`; the checkpoint with the best **validation macro-F1** is
+kept as `best.pt` and is the one evaluated on test. Early stopping on the same criterion.
 
-## 2. Mood tagging
+Apple Silicon MPS is auto-detected, with `PYTORCH_ENABLE_MPS_FALLBACK=1` so unsupported ops
+fall back to CPU rather than crashing. **Runs are strictly sequential**: two concurrent jobs
+contending for the single MPS device took DenseNet from 350s/epoch to 1800s/epoch.
 
-Grounded in **Russell's Circumplex Model of Affect** (Russell, J. A., "A circumplex model of
-affect," *Journal of Personality and Social Psychology*, 39(6), 1980, 1161-1178), which places
-affective states on a 2D plane of valence (pleasant/unpleasant) and arousal (activated/deactivated).
+**Augmentation.** SpecAugment (Park et al. 2019) — random frequency and time masking applied
+to cached log-mel spectrograms, train split only (`src/training/augment.py`). Mixup on the
+batch where configured. Label smoothing where configured.
 
-Spotify's `valence` feature maps directly onto the model's valence axis; `energy` is used as a
-proxy for arousal (a standard substitution in music-emotion-recognition literature, since Spotify
-does not expose a distinct "arousal" feature). Both are recentered from Spotify's native 0..1 range
-to -1..1, and the resulting point is bucketed into one of 8 octants (happy, excited, tense, angry,
-sad, tired, relaxed, content) plus a small-radius "neutral" zone at the center
-(`src/mood/mood_tagger.py`).
+**Seeds.** Seed noise on this dataset is comparable in size to several of the effects worth
+chasing (`docs/NEGATIVE_RESULTS.md` §3). Any claimed improvement of ~1pp requires multiple
+seeds before it means anything, and single-seed differences at that scale are reported as
+such.
 
-`src/mood/echonest_crosscheck.py` cross-checks this mapping against FMA's `echonest.csv` subset
-(Spotify-style features for a subset of FMA tracks that also carry a genre label), producing a
-genre x mood distribution as a sanity check that the mapping is musically sensible (e.g. energetic
-genres skewing toward excited/tense, ambient/instrumental genres skewing toward relaxed/content)
-rather than a hard validation, since genre and mood are legitimately independent axes.
+---
 
-## 3. Curator agent
+## 5. Known limitations of this methodology
 
-`src/curator/playlist_agent.py`'s `PlaylistCurator` implements a three-stage pipeline:
-
-1. **Request resolution** -- accepts either structured `(genre, mood)` or a free-text prompt
-   (`parse_prompt`, simple keyword matching against known genres and a mood-keyword table).
-2. **Candidate ranking** -- filters the Spotify Tracks Dataset pool to the requested genre (falling
-   back to the full pool if the genre isn't found, rather than returning empty), scores each
-   candidate by a weighted combination of mood-target closeness (Euclidean distance in
-   valence/energy space to the mood's centroid) and popularity, and keeps the top-scoring
-   candidates.
-3. **Flow ordering** -- greedily walks the ranked candidates, at each step picking the remaining
-   track that minimizes a transition cost (normalized tempo delta + circular pitch-class distance
-   between keys), while excluding the same artist as the immediately preceding track whenever an
-   alternative exists.
-
-This is the project's core novel contribution -- no FMA genre-classification paper we compared
-against also builds a mood layer or an agentic curator/playlist-creation pipeline on top of its
-classifier (see `docs/PAPER_DRAFT.md`, Discussion).
-
-## 4. Spotify integration
-
-`src/spotify/client.py` wraps `spotipy`: `SpotifyOAuth` handles the authorization-code flow (token
-cached locally, gitignored), `search_track` does a best-effort text search per curated track and
-returns `None` on no confident match (logged and skipped rather than failing the whole playlist),
-and `create_playlist_from_tracks` creates a real playlist in the authenticated user's account and
-adds all successfully matched tracks.
+- **3-second context.** Every embedding in this project is extracted from 3s windows. Genre
+  is partly a long-timescale property — form, instrumentation turnover, section changes —
+  so the window may be a ceiling on achievable accuracy rather than a neutral choice. It is
+  a controlled variable, not a validated one.
+- **Reimplementation fidelity**, as stated in §3.
+- **8 coarse genres.** Many FMA tracks are genuinely multi-genre, which caps what any
+  classifier can reach against single `genre_top` labels.
+- **One dataset.** Everything here is FMA-small. The ladder measures protocol inflation on
+  this benchmark; whether the magnitudes transfer to GTZAN or MagnaTagATune is untested.
