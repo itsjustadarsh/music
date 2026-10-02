@@ -69,12 +69,20 @@ def build_cnn_loaders(cfg: dict):
 
 def build_mert_loaders(cfg: dict):
     """Loaders over cached MERT embeddings -- no backbone forward pass, so these are
-    fast enough to run the whole multi-seed ablation grid on a laptop."""
+    fast enough to run the whole multi-seed ablation grid on a laptop.
+
+    `embeddings_dir` selects the cache. It exists so a probe can be trained on a
+    longer episode grid (`extract_embeddings.py --episode-seconds`) with everything
+    else held fixed, which is the only way the window length can be read as the cause
+    of any difference.
+    """
     split_mode = cfg.get("split_mode", "official")
+    embed_dir = Path(cfg["embeddings_dir"]) if cfg.get("embeddings_dir") else MERT_EMBEDDINGS_DIR
+    manifest = embed_dir / "manifest.csv"
     kwargs = dict(split_mode=split_mode)
-    train_ds = MertEmbeddingDataset(MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, "train", **kwargs)
-    val_ds = MertEmbeddingDataset(MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, "val", **kwargs)
-    test_ds = MertEmbeddingDataset(MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, "test", **kwargs)
+    train_ds = MertEmbeddingDataset(manifest, embed_dir, "train", **kwargs)
+    val_ds = MertEmbeddingDataset(manifest, embed_dir, "val", **kwargs)
+    test_ds = MertEmbeddingDataset(manifest, embed_dir, "test", **kwargs)
     bs = cfg["batch_size"]
     # num_workers=0: each dataset caches one track's array, which worker processes
     # would duplicate rather than share.

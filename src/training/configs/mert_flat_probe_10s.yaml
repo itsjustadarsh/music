@@ -1,0 +1,18 @@
+# Identical to mert_flat_probe_v1 except for the feature cache it reads. The only
+# varying factor is the episode length MERT saw (10s instead of 3s), so a difference
+# in accuracy is attributable to the window and not to anything else.
+run_name: mert_flat_probe_10s
+model: mert_flat_probe
+embeddings_dir: data/embeddings/mert_10s
+epochs: 50
+batch_size: 128
+lr: 0.0003
+weight_decay: 0.001
+optimizer: adamw
+scheduler: cosine
+proj_size: 512
+dropout: 0.5
+seed: 42
+early_stopping_patience: 10
+label_smoothing: 0.1
+mixup_alpha: 0.3

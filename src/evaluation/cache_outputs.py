@@ -17,6 +17,8 @@ import argparse
 import json
 import logging
 
+from pathlib import Path
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -31,7 +33,6 @@ log = logging.getLogger(__name__)
 
 MANIFEST_PATH = PROCESSED_DIR / "manifest.csv"
 MERT_EMBEDDINGS_DIR = DATA_DIR / "embeddings" / "mert"
-MERT_MANIFEST_PATH = MERT_EMBEDDINGS_DIR / "manifest.csv"
 SPLITS = ("train", "val", "test")
 
 
@@ -44,6 +45,10 @@ def _build(run_name: str, cfg: dict, split: str):
     """
     collate_fn = None
     split_mode = cfg.get("split_mode", "official")
+    # `embeddings_dir` lets a run point at an alternative MERT-95M cache, e.g. the
+    # longer episode grid from extract_embeddings.py --episode-seconds.
+    mert_dir = Path(cfg["embeddings_dir"]) if cfg.get("embeddings_dir") else MERT_EMBEDDINGS_DIR
+    mert_manifest = mert_dir / "manifest.csv"
     if cfg["model"] == "cnn":
         model = GenreCNN(num_classes=NUM_CLASSES)
         ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, split, augment=False,
@@ -59,7 +64,7 @@ def _build(run_name: str, cfg: dict, split: str):
             layer_index=cfg.get("layer_index"),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            mert_manifest, mert_dir, split,
             return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_attn_probe":
@@ -73,7 +78,7 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.3),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            mert_manifest, mert_dir, split,
             return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "resnet":
@@ -97,7 +102,7 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.4),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            mert_manifest, mert_dir, split,
             return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] in ("mert_flat_probe",):
@@ -109,7 +114,7 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.5),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            mert_manifest, mert_dir, split,
             return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_large_probe":
