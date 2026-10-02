@@ -1,0 +1,17 @@
+run_name: byola_probe_v1_cliprandom
+model: embedding_probe
+embedding_name: byola
+embed_dim: 2048
+hidden_sizes: [512, 256]
+epochs: 50
+batch_size: 128
+lr: 0.0003
+weight_decay: 0.001
+optimizer: adamw
+scheduler: cosine
+dropout: 0.4
+seed: 42
+early_stopping_patience: 10
+label_smoothing: 0.1
+mixup_alpha: 0.3
+split_mode: random_clip

@@ -1,7 +1,14 @@
 # An Agentic Pipeline for Music Genre Classification, Mood Tagging, and Playlist Curation
 
-*Draft -- results sections marked TBD pending a real training run (see `docs/RESULTS.md` and
-`FINALSTEPS.md`). Structure follows a standard IEEE/ACM conference format.*
+> **SUPERSEDED — do not cite figures from this file.** This is the project's first
+> draft, written before any training run, when the intended contribution was the
+> classify → mood → curate pipeline. The project has since moved to a different
+> thesis: a protocol audit of the FMA-small literature plus a hybrid-fusion
+> baseline. **`docs/research.md` is the current paper.** Results here are still
+> marked TBD, the related-work section does not reflect the verification pass
+> recorded in `study/evaluation_protocols.md`, and the "eight published baselines"
+> framing predates the finding that none of them states its split. Kept for
+> provenance only.
 
 ## Abstract
 
@@ -30,12 +37,12 @@ evaluated end-to-end.
 
 - **FMA dataset and baselines.** Defferrard et al. (2017) introduced FMA and reported baseline
   genre-classification results using hand-crafted audio features with classical classifiers.
-- **CNN and transfer-learning approaches on FMA.** Park et al. (2018) and Lee et al. (2019) applied
-  transfer-learning CNNs; Bian et al. (2019) combined a DenseNet architecture with audio
+- **CNN and transfer-learning approaches on FMA.** Park et al. (2018) applied a CNN pretrained on
+  artist-label classification; Bian et al. (2019) combined a DenseNet architecture with audio
   augmentation (time-overlap, pitch-shift) and SVM stacking, reporting the strongest accuracy among
   papers we could verify (68.9%).
 - **Pretrained-representation approaches.** Liu, DeMori & Abayomi (2022) fine-tuned an
-  AudioSet-pretrained CNN14 (PANNs); Rai & Bhattacharjee (2026) evaluated BYOL-A self-supervised
+  AudioSet-pretrained CNN14 (PANNs); Rai & Bhattacharjee (2025) evaluated BYOL-A self-supervised
   embeddings with a downstream classifier.
 - **Modern architecture comparison.** Ashraf et al. (2025) proposed a dual residual CNN with hybrid
   pooling, the most recent verified result in our comparison set.

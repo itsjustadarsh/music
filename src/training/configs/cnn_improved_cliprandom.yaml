@@ -1,0 +1,14 @@
+run_name: cnn_improved_cliprandom
+model: cnn
+epochs: 60
+batch_size: 32
+lr: 0.0003
+weight_decay: 0.0001
+optimizer: adamw
+scheduler: cosine
+augment_spec: true
+label_smoothing: 0.1
+mixup_alpha: 0.3
+seed: 42
+early_stopping_patience: 15
+split_mode: random_clip

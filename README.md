@@ -1,13 +1,16 @@
 # Hybrid Feature Fusion for Music Genre Classification Under Strict Artist-Filtered Evaluation
 
-A systematic study of music genre classification on FMA-small (8 genres, 8,000 tracks) under the official artist-filtered evaluation protocol. We train 31 models spanning CNN baselines, frozen MERT self-supervised probes, and hybrid ensemble strategies, achieving **60.3% track-level accuracy** — a new state-of-the-art among confirmed artist-filtered results.
+A systematic study of music genre classification on FMA-small (8 genres, 8,000 tracks) under the official artist-filtered evaluation protocol. We train 48 models — 33 under the official split, 15 more under two leakier protocols — spanning CNN baselines, reimplementations of published architectures, frozen MERT / BYOL-A / PANNs probes, and hybrid ensemble strategies. The best reaches **60.3% track-level accuracy**, offered as a documented baseline rather than a state of the art, because no published FMA-small paper states the protocol it would have to be compared against.
 
 ## Highlights
 
-- **60.3% track-level accuracy** on FMA-small (artist-filtered), surpassing 5 of 7 published baselines
-- **35pp protocol leakage quantified**: same model yields 91.4% (clip-random) vs 56.1% (artist-filtered)
-- **31 models** across 6 architecture families, all evaluated under identical strict conditions
+- **A three-rung protocol audit**: eight architectures trained identically under artist-filtered → random-track → random-clip splits show **+14.1 to +41.0pp of inflation (mean +30.5pp)**, decomposing into +12.8pp from dropping the artist filter and a further +20.0pp from leaking clips of the same recording
+- **60.3% track-level accuracy** on FMA-small (artist-filtered)
+- **The field's reference baseline does not exist**: "58.0% (Defferrard et al.)" is a transposed 16-genre *medium*-subset cell, absent from the FMA paper, its repository, and every arXiv revision
+- **48 models** across 11 architecture families, all evaluated under identical, stated conditions
 - **Hybrid feature fusion**: concatenates CNN + MERT embeddings with multi-model probabilities for embedding-level ensemble
+
+> **All accuracies in this repository are track-level** — per-episode softmax averaged within a track, then argmax — because every published figure we compare against is one prediction per track. Our episode-level numbers run 5-7pp lower and are not interchangeable.
 
 ## Results
 
@@ -20,19 +23,52 @@ A systematic study of music genre classification on FMA-small (8 genres, 8,000 t
 | MERT-330M Probe | 56.6% | 56.5% | Individual |
 | CNN Improved | 55.1% | 54.2% | Individual |
 
-See [`docs/FULL_RESULTS.md`](docs/FULL_RESULTS.md) for all 31 models with per-genre breakdown.
+See [`docs/FULL_RESULTS.md`](docs/FULL_RESULTS.md) for every model with per-genre breakdown.
+
+## Protocol Leakage
+
+Identical architectures, identical hyperparameters, three splits:
+
+| Model | Artist-filtered | Random-track | Clip-random | Total inflation |
+|-------|-----------------|--------------|-------------|-----------------|
+| MERT-330M Probe | 56.6% | 70.9% | 96.0% | +39.4pp |
+| MERT Attention Probe | 54.6% | 69.8% | 95.7% | +41.0pp |
+| MERT Probe (weighted-sum) | 56.1% | 69.2% | 93.6% | +37.5pp |
+| MERT Deep Probe | 55.5% | 68.5% | 92.2% | +36.7pp |
+| MERT Flat Probe | 58.2% | 70.2% | 90.2% | +32.0pp |
+| BYOL-A + DNN (Rai & Bhattacharjee 2025) | 57.4% | 69.9% | 84.5% | +27.2pp |
+| PANNs CNN14 (Liu et al. 2022) | 57.4% | 67.2% | 73.4% | +16.0pp |
+| CNN (log-mel) | 55.1% | — | 69.2% | +14.1pp |
+| **Mean** | | | | **+30.5pp** |
+
+The middle rung matters because the literature is not binary: most papers state a ratio ("random 8:1:1") without naming the *unit* it applies to, leaving undecided which of the two failures they incurred. Full table: [`outputs/protocol_leakage_table.md`](outputs/protocol_leakage_table.md).
 
 ## Comparison with Published Baselines
 
-| Method | Accuracy | Protocol |
-|--------|----------|----------|
-| Bian et al. (2019) — DenseNet+SVM | 68.9% | unspecified |
-| Rai & Bhattacharjee (2026) — BYOL-A+DNN | 64.3% | unspecified |
-| Liu et al. (2022) — CNN14 (PANNs) | 60.9% | unspecified |
-| **Ours — Meta-Ensemble** | **60.3%** | **artist_filtered** |
-| Defferrard et al. (2017) — Features+SVM | 58.0% | artist_filtered |
+The `Stated protocol` column records what each paper's own text discloses — never what its accuracy implies.
 
-Baselines marked "unspecified" do not state their evaluation protocol. Our leakage analysis shows this can inflate accuracy by 10–35pp.
+| Method | Accuracy | Stated protocol |
+|--------|----------|-----------------|
+| Bian et al. (2019) — DenseNet+SVM | 68.9% | none — no split sentence in the paper |
+| Ashraf et al. (2025) — Dual CNN | 68.5% | **clip-random, stated** |
+| Rai & Bhattacharjee (2025) — BYOL-A+DNN | 64.3% | none |
+| Liu et al. (2022) — CNN14 (PANNs) | 60.9% | partitions described; artist-conditioning not |
+| **Ours — Meta-Ensemble** | **60.3%** | **official artist-filtered, track-level** |
+| Park et al. (2018) — Transfer CNN | 56.9% | none for FMA |
+| Features+SVM, re-run by Park et al. (2018) | 54.8% | artist-filtered *by construction* (FMA's own code reads the `split` column) |
+
+Of the nine genuine published FMA-small results, **none states in prose that it used the artist-filtered split**. Our leakage analysis shows the same architecture moving +14 to +41pp across the protocol ladder, so undisclosed-protocol numbers are not comparable to ours in either direction.
+
+We reimplemented two of these architectures and ran them down the ladder ourselves. Neither reproduces its published number under the artist-filtered split, and both overshoot it once the filter is removed:
+
+| Paper | Published | Stated protocol | Ours: artist-filtered | random-track | clip-random |
+|-------|-----------|-----------------|----------------------|--------------|-------------|
+| Rai & Bhattacharjee 2025 | 64.3% | none | 57.4% | 69.9% | 84.5% |
+| Liu et al. 2022 | 60.9% | partitions described, artist-conditioning unstated | 57.4% | 67.2% | 73.4% |
+
+Where a paper never names its split, **no column is the fair comparison** — which is precisely the problem.
+
+> **The widely cited "58.0% (Defferrard et al.)" does not exist.** It is not in the FMA paper (whose only accuracy table is captioned "…on the **medium** subset", 16 genres), not in its repository's executed baselines notebook (which subsets to `<= 'medium'`), and not in any arXiv revision. See [mdeff/fma#69](https://github.com/mdeff/fma/issues/69), unanswered since Dec 2023. Details in [`study/evaluation_protocols.md`](study/evaluation_protocols.md).
 
 ## Method
 
@@ -124,7 +160,9 @@ seed: 42
 ```
 src/
   data/           Download, validate, preprocess FMA-small; extract MERT embeddings
-  models/         GenreCNN, MertProbe, MertFlatProbe, MertDeepProbe, MertAttentionProbe
+  models/         GenreCNN, MERT probes (weighted-sum/flat/deep/attention), EmbeddingProbe
+                  (BYOL-A, PANNs), and reimplementations: GenreDenseNet, DualCNN,
+                  CNNBiGRU, CapsNet, CNNTransformer
   training/       Config-driven train.py, loss functions (CE, focal), dataset classes
   evaluation/     Track-level metrics, output caching, baseline comparison
   fusion/         ESCF (Epoch-Scheduled Conditional Fusion) experiments
@@ -137,7 +175,7 @@ scripts/          Ensemble experiments, embedding extraction, analysis utilities
 frontend/         Web demo UI
 tests/            Unit tests
 docs/
-  FULL_RESULTS.md   Complete results for all 31 models with reproduction steps
+  FULL_RESULTS.md   Complete results for every model with reproduction steps
   model_inventory.md  Detailed experiment log with hyperparameters
   research.md       Draft research paper (IEEE format)
 ```

@@ -20,7 +20,11 @@ __pycache__/
 
 # Training outputs / checkpoints
 outputs/
+logs/
 checkpoints/
+
+# Vendored upstream repos (BYOL-A); clone instructions live in src/data/extract_byola.py
+third_party/
 *.ckpt
 *.pt
 *.pth
@@ -40,6 +44,9 @@ checkpoints/
 *.prompt
 CLAUDE.md
 .claude.json
+
+# Personal study notes
+study/
 
 # Docs figures generated at eval time (kept out unless explicitly added)
 docs/figures/*.png

@@ -42,5 +42,8 @@ def build_criterion(cfg: dict) -> nn.Module:
     elif loss_name == "focal":
         gamma = cfg.get("focal_gamma", 2.0)
         return FocalLoss(gamma=gamma, label_smoothing=label_smoothing)
+    elif loss_name == "margin":
+        from src.models.capsnet import MarginLoss
+        return MarginLoss()
     else:
         raise ValueError(f"Unknown loss: {loss_name!r}")

@@ -18,9 +18,36 @@ from src.models.common import GENRE_TO_IDX
 from src.training.augment import pitch_shift_waveform, spec_augment, time_stretch_waveform
 
 
-SPLIT_MODES = ("official", "random_clip")
+SPLIT_MODES = ("official", "random_clip", "random_track")
 RANDOM_CLIP_SEED = 42
 RANDOM_CLIP_FRACTIONS = (0.8, 0.1, 0.1)
+
+
+def assign_random_track_splits(
+    df: pd.DataFrame, seed: int = RANDOM_CLIP_SEED
+) -> pd.DataFrame:
+    """Re-split 8:1:1 at the *track* level: no clip leakage, but no artist filter either.
+
+    The middle rung of the protocol ladder. Several published FMA-small results state a
+    random 8:1:1 ratio over songs without mentioning artists (Zhang 2025 is explicit about
+    splitting songs; Ma et al. 2026 give the ratio but never say what unit it applies to).
+    Scoring those against either "official" or "random_clip" would misattribute the gap, so
+    this mode isolates the artist/album effect on its own, with same-track leakage removed.
+    """
+    rng = np.random.default_rng(seed)
+    track_ids = np.sort(df["track_id"].unique())
+    order = rng.permutation(len(track_ids))
+    n_train = int(RANDOM_CLIP_FRACTIONS[0] * len(track_ids))
+    n_val = int(RANDOM_CLIP_FRACTIONS[1] * len(track_ids))
+
+    assigned = np.empty(len(track_ids), dtype=object)
+    assigned[order[:n_train]] = "train"
+    assigned[order[n_train : n_train + n_val]] = "val"
+    assigned[order[n_train + n_val :]] = "test"
+
+    out = df.copy()
+    out["split"] = pd.Series(df["track_id"]).map(dict(zip(track_ids, assigned)))
+    return out
 
 
 def assign_random_clip_splits(
@@ -64,9 +91,11 @@ def load_manifest(
     through in a laptop time budget; subsampling here rather than at preprocessing
     time means both models share one cache and one manifest.
 
-    `split_mode` selects the evaluation protocol: "official" uses FMA's own
-    artist-filtered split (the honest one, and the default); "random_clip" re-splits
-    clips 8:1:1 to replicate the leaky protocol used by parts of the literature.
+    `split_mode` selects the evaluation protocol, in increasing order of leakage:
+    "official" uses FMA's own artist-filtered split (the honest one, and the default);
+    "random_track" re-splits whole tracks 8:1:1, so clips never span splits but artists
+    do; "random_clip" re-splits individual clips 8:1:1, so the same track appears in both
+    train and test. Only "official" may produce a headline number.
     """
     if split_mode not in SPLIT_MODES:
         raise ValueError(f"Unknown split_mode {split_mode!r}; expected one of {SPLIT_MODES}")
@@ -74,6 +103,8 @@ def load_manifest(
     df = pd.read_csv(manifest_path)
     if split_mode == "random_clip":
         df = assign_random_clip_splits(df)
+    elif split_mode == "random_track":
+        df = assign_random_track_splits(df)
     df = df[df["split"] == split]
     if max_subclips_per_track is not None:
         df = df[df["subclip_idx"] < max_subclips_per_track]

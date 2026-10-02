@@ -121,16 +121,22 @@ def evaluate_run(run_name: str) -> dict:
 
     device = get_device()
 
+    # A run must be scored on the same split it was trained under. Defaulting to
+    # "official" here would score a clip-random model against the artist-filtered
+    # test set, producing a number that is neither protocol and silently mislabelled
+    # as artist-filtered downstream.
+    split_mode = cfg.get("split_mode", "official")
+
     if cfg["model"] == "cnn":
         model = GenreCNN(num_classes=NUM_CLASSES)
-        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True)
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "ast":
         from src.models.modern_model import ASTGenreClassifier, load_feature_extractor
 
         model = ASTGenreClassifier(num_classes=NUM_CLASSES)
         fe = load_feature_extractor()
-        test_ds = WaveformDataset(MANIFEST_PATH, PROCESSED_DIR, "test", return_track_ids=True)
+        test_ds = WaveformDataset(MANIFEST_PATH, PROCESSED_DIR, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False, collate_fn=make_ast_collate_fn(fe))
     elif cfg["model"] == "mert_probe":
         from src.models.mert_probe import MertProbe
@@ -144,7 +150,7 @@ def evaluate_run(run_name: str) -> dict:
             learn_layer_weights=cfg.get("learn_layer_weights", True),
             layer_index=cfg.get("layer_index"),
         )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_attn_probe":
         from src.models.mert_attn_probe import MertAttentionProbe
@@ -158,7 +164,7 @@ def evaluate_run(run_name: str) -> dict:
             mlp_size=cfg.get("mlp_size", 512),
             dropout=cfg.get("dropout", 0.3),
         )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "resnet":
         from src.models.resnet_cnn import GenreResNet
@@ -168,7 +174,7 @@ def evaluate_run(run_name: str) -> dict:
             dropout=cfg.get("dropout", 0.4),
             embed_dim=cfg.get("embed_dim", 256),
         )
-        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True)
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_flat_probe":
         from src.models.mert_flat_probe import MertFlatProbe
@@ -180,7 +186,7 @@ def evaluate_run(run_name: str) -> dict:
             proj_size=cfg.get("proj_size", 512),
             dropout=cfg.get("dropout", 0.5),
         )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_deep_probe":
         from src.models.mert_deep_probe import MertDeepProbe
@@ -194,7 +200,7 @@ def evaluate_run(run_name: str) -> dict:
             n_residual_blocks=cfg.get("n_residual_blocks", 2),
             dropout=cfg.get("dropout", 0.4),
         )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_large_probe":
         from src.models.mert_probe import MertProbe
@@ -211,7 +217,7 @@ def evaluate_run(run_name: str) -> dict:
             learn_layer_weights=cfg.get("learn_layer_weights", True),
             layer_index=cfg.get("layer_index"),
         )
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_large_flat_probe":
         from src.models.mert_flat_probe import MertFlatProbe
@@ -226,7 +232,7 @@ def evaluate_run(run_name: str) -> dict:
             proj_size=cfg.get("proj_size", 512),
             dropout=cfg.get("dropout", 0.5),
         )
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "mert_large_deep_probe":
         from src.models.mert_deep_probe import MertDeepProbe
@@ -243,7 +249,66 @@ def evaluate_run(run_name: str) -> dict:
             n_residual_blocks=cfg.get("n_residual_blocks", 2),
             dropout=cfg.get("dropout", 0.4),
         )
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "densenet":
+        from src.models.densenet import GenreDenseNet
+
+        model = GenreDenseNet(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            pretrained=cfg.get("pretrained", True),
+        )
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "dual_cnn":
+        from src.models.dual_cnn import DualCNN
+
+        model = DualCNN(num_classes=NUM_CLASSES, dropout=cfg.get("dropout", 0.3))
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "cnn_bigru":
+        from src.models.cnn_bigru import CNNBiGRU
+
+        model = CNNBiGRU(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            gru_hidden=cfg.get("gru_hidden", 128),
+            gru_layers=cfg.get("gru_layers", 2),
+        )
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "capsnet":
+        from src.models.capsnet import CapsNet
+
+        model = CapsNet(num_classes=NUM_CLASSES, num_routing=cfg.get("num_routing", 3))
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "cnn_transformer":
+        from src.models.cnn_transformer import CNNTransformer
+
+        model = CNNTransformer(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            d_model=cfg.get("d_model", 256),
+            nhead=cfg.get("nhead", 4),
+            num_transformer_layers=cfg.get("num_transformer_layers", 2),
+        )
+        test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
+        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
+    elif cfg["model"] == "embedding_probe":
+        from src.models.embedding_probe import EmbeddingProbe
+
+        model = EmbeddingProbe(
+            num_classes=NUM_CLASSES,
+            embed_dim=cfg["embed_dim"],
+            hidden_sizes=tuple(cfg.get("hidden_sizes", (512, 256))),
+            dropout=cfg.get("dropout", 0.4),
+        )
+        embed_dir = DATA_DIR / "embeddings" / cfg["embedding_name"]
+        test_ds = MertEmbeddingDataset(
+            embed_dir / "manifest.csv", embed_dir, "test", return_track_ids=True, split_mode=split_mode
+        )
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     else:
         raise ValueError(f"Unknown model type: {cfg['model']}")

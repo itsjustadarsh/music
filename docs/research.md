@@ -2,7 +2,7 @@
 
 ---
 
-**Abstract** — Music genre classification on the Free Music Archive (FMA) dataset remains a challenging benchmark, yet most published results omit critical details about their evaluation protocol, making fair comparison impossible. We present a systematic study of 31 models spanning CNN baselines, frozen MERT self-supervised embeddings, and novel hybrid fusion strategies, all evaluated under the strict official FMA artist-filtered split. Our key methodological contribution is a hybrid feature fusion approach that concatenates CNN spectral embeddings with MERT-v1-95M embeddings and multi-model softmax probabilities, training a lightweight MLP classifier on this 704-dimensional representation. Averaging over 10 random seeds and combining with individual model predictions via Nelder-Mead weight optimization, our meta-ensemble achieves **60.3% track-level accuracy** on FMA-small (8 genres, 800 test tracks), surpassing 5 of 7 published baselines. Critically, we demonstrate that the same model achieves 91.4% under a clip-random split versus 56.1% under the artist-filtered split — a 35 percentage-point gap that calls into question published results using unspecified evaluation protocols. We release all code, trained models, and cached embeddings for full reproducibility.
+**Abstract** — Music genre classification on the Free Music Archive (FMA) dataset is reported as a solved-to-90% benchmark, yet of the nine published 8-way FMA-small results we could verify, not one states in prose that it used the dataset's official artist-filtered split, and six disclose nothing about their split beyond a ratio. We quantify what that silence costs. Reimplementing published architectures and running them, alongside our own, down a three-rung protocol ladder — artist-filtered, random-track, random-clip — we measure total inflation of +14.1 to +41.0 percentage points (mean +30.5pp across eight architectures, all track-level), decomposing into +12.8pp from dropping the artist filter and a further +20.0pp from letting clips of one recording span train and test. The reproduction is specific, not analogical: two papers that disclose no artist-conditioning report 64.3% and 60.9%, while reimplementations of their architectures reach only 57.4% artist-filtered and overshoot both figures once the artist filter is removed. We also show that the field's reference baseline, "58.0% (Defferrard et al.)", appears in no version of the FMA paper or its repository and is a transposed 16-genre medium-subset cell. Alongside the audit we present a hybrid feature fusion meta-ensemble that concatenates CNN and MERT-v1-95M embeddings with multi-model softmax probabilities, reaching **60.3% track-level accuracy** under the official split — which we offer as a documented baseline rather than a state of the art. All code, 48 trained models, and cached embeddings are released.
 
 **Index Terms** — music genre classification, self-supervised learning, MERT, ensemble methods, evaluation protocol, FMA dataset
 
@@ -12,15 +12,17 @@
 
 Automatic music genre classification (MGC) is a foundational task in music information retrieval (MIR) with applications in recommendation systems, music discovery, and library organization [1]. The Free Music Archive (FMA) dataset [2] provides a standardized benchmark with an official artist-filtered train/validation/test split designed to prevent information leakage — ensuring that no artist appears in more than one split.
 
-Despite this, the majority of published results on FMA-small either do not specify their evaluation protocol or use random clip-level splits that allow the same track's episodes to appear in both training and testing sets. This train-test leakage inflates reported accuracy by 10–35 percentage points, making cross-study comparison unreliable.
+Despite this, the majority of published results on FMA-small either do not specify their evaluation protocol or split at a unit finer than the track, allowing episodes of one recording to appear in both training and testing. We show this inflates reported accuracy by 17 to 43 percentage points, which is larger than the entire span of accuracies the literature competes over, and makes cross-study comparison unreliable in the strong sense: the ranking is not noisy, it is measuring different quantities.
 
-In this work, we make three contributions:
+In this work, we make four contributions:
 
-1. **Comprehensive evaluation under strict protocol**: We train and evaluate 31 models — spanning custom CNNs, frozen MERT [3] self-supervised embeddings with various probe architectures, and multiple ensemble strategies — all under the official FMA artist-filtered split with track-level evaluation.
+1. **A protocol audit of the literature**: We read every published 8-way FMA-small result from 2017–2026 and record what each paper's own text discloses about its split — never what its accuracy implies, which would be circular. We find zero prose statements of artist-filtered evaluation, one stated clip-random split, one stated track-level split, and six papers that disclose nothing beyond a ratio. We also exclude three widely circulated "FMA-small records" that do not survive checking, including the field's reference baseline (Section II-A).
 
-2. **Hybrid feature fusion**: We propose a fusion approach that concatenates penultimate embeddings from diverse backbones (CNN and MERT) with softmax probability vectors from multiple trained models, feeding this representation into a lightweight MLP. This embedding-level fusion captures cross-modal interactions that probability-level ensembles cannot.
+2. **A three-rung protocol ladder, and reproduction on it**: Rather than a binary leaking/non-leaking comparison, we evaluate under artist-filtered, random-track, and random-clip splits, because most of the literature states a unit too vaguely to be scored against a binary. We reimplement published architectures from their papers and run them down all three rungs on identical data and scoring.
 
-3. **Quantification of protocol leakage**: We show that the identical model achieves 91.4% accuracy under clip-random evaluation versus 56.1% under artist-filtered evaluation, establishing a concrete 35.3 percentage-point inflation factor.
+3. **Comprehensive evaluation under strict protocol**: We train and evaluate 48 models — 33 under the official FMA artist-filtered split and 15 more under the two leakier protocols — spanning custom CNNs, reimplementations of published architectures, frozen MERT [3] / BYOL-A / PANNs embeddings with various probe architectures, and multiple ensemble strategies, all scored track-level.
+
+4. **Hybrid feature fusion**: We propose a fusion approach that concatenates penultimate embeddings from diverse backbones (CNN and MERT) with softmax probability vectors from multiple trained models, feeding this representation into a lightweight MLP. This embedding-level fusion captures cross-modal interactions that probability-level ensembles cannot.
 
 ---
 
@@ -28,9 +30,23 @@ In this work, we make three contributions:
 
 ### A. Music Genre Classification on FMA
 
-Defferrard et al. [2] introduced the FMA dataset with hand-crafted audio features and SVM baselines, reporting 54.8–58.0% on FMA-small under the artist-filtered split. Bian et al. [4] achieved 68.9% using DenseNet with time-overlap and pitch-shift augmentation plus SVM stacking, but did not specify their evaluation protocol. Liu et al. [5] applied AudioSet-pretrained CNN14 (PANNs) for 60.9%, also without specifying the split protocol. More recently, Rai and Bhattacharjee [6] used BYOL-A pretrained embeddings with a tuned DNN classifier for 64.3%, again without specifying protocol. Park et al. [7] and Lee et al. [8] reported 56.8% and 51.2% respectively using transfer learning CNNs.
+Defferrard et al. [2] introduced FMA together with an artist-filtered split shipped in the dataset's own metadata, and with hand-crafted feature + SVM baselines. A figure of "58.0% (Defferrard et al.)" is widely quoted as the artist-filtered reference point on FMA-small; it does not exist. We traced it and report the trace here, because the field's only agreed-upon honest baseline turns out to be a citation artifact.
 
-A critical observation is that only Defferrard et al. [2] explicitly used the artist-filtered split; all other works either used unspecified protocols or clip-level random splits. As we demonstrate in Section V-E, this distinction is decisive.
+The FMA paper proposes four tasks, of which problem 1 is "single top genre on the balanced small subset". It is proposed and never reported. Table 6, the only accuracy table, is captioned "Test set accuracies of various features and classifiers for top genre recognition on the **medium** subset" — 25,000 tracks, 16 genres. The value 58 does appear in Table 6, as the MLP/all-features cell, on medium. The repository's executed baseline notebook likewise subsets to `<= 'medium'` and prints 19,922/2,505/2,573 examples over 16 genres; it contains no FMA-small run in any version. An open issue on the FMA repository (mdeff/fma#69, December 2023) asks the authors directly for small-subset baselines and has received no reply in over two years. We conclude that **no FMA-small accuracy was ever published by Defferrard et al.**, and that the circulating 58.0% is a transposition of a medium-subset, 16-genre cell.
+
+The number that *is* real is 54.82%, and it belongs to Park et al. [7], whose Table 4 lists `SVM [7] — 0.5482 †` with the footnote "this result was obtained using the provided code and dataset in [7]". It is a re-run of FMA's released baseline code on fma_small. Because that code reads the official `split` column, the result is artist-filtered **by construction** — though note that even here the property is inherited from the code, not asserted by the authors. Bian et al. [4] later reproduce the figure as "SVM (Defferrard, 2017) 54.8", which is how a third-party re-run became attributed to the dataset authors. We cite it to Park.
+
+Every protocol statement attributed to a paper below was read from that paper's own text; where a paper is silent we say so rather than inferring a protocol from its accuracy, which would make our argument circular.
+
+**CNN-based approaches.** Bian et al. [4] achieved 68.9% using DenseNet with time-overlap and pitch-shift augmentation plus SVM stacking. Their paper contains no train/test split description of any kind. Their augmentation generates extra windows at 50% overlap and they slice each track into ten 2.56s segments, so clip-level leakage is *possible*, but they never state whether augmentation precedes or follows splitting and we do not assume it. Evaluation is track-level: segment predictions are averaged into "a single song-level prediction". Ashraf et al. [17] reported 68.5% with a dual CNN using modified residual learning and hybrid pooling, and are the one paper in this survey that states clip-level splitting outright: "we segmented all music files into 3-second clips and split them into training, validation, and test sets using an 8:1:1 ratio". Segmentation precedes splitting, so clips of one track span train and test. Kostrzewa et al. [21] tested CNN, RNN, and CRNN ensembles, reporting 56.4% accuracy and 54.9% macro F1. They give a ratio — "divided into three independent subsets in an 80:10:10 ratio" — but no selection mechanism and no mention of artists. Their input is one 128×128 mel-spectrogram per song with no segmentation, so same-track leakage is structurally impossible; the open question is only artist overlap. Notably, they themselves criticise a competing result for "data leakage from the training of deep learning model to the test data, which leads to over-optimistic outcomes".
+
+**Hybrid CNN-Transformer architectures.** Ma et al. [18] proposed CT-GateNet, a CNN-Transformer hybrid with gated channel-spatial attention, reporting 89.42% on FMA-small. Their only split sentence is "all datasets were evenly split into training, validation and test sets at an 8:1:1 ratio" — the unit of splitting is never named, so whether clips or tracks were split cannot be determined from the paper. Zhang [19] achieved 90.23% with TS-Resformer (ResNet + Transformer fusion). The paper does slice audio into 12-second segments with 50% overlap, but the split is described over *songs* — "the dataset is sliced into training set, validation set, and test set according to 8:1:1, and the number of songs of different genres in the three sets is guaranteed to be balanced" — which places the overlap *within* each partition rather than across them. We therefore classify it as a track-level random split without artist filtering, not as clip-random. Neither paper mentions artist filtering or FMA's official split files.
+
+**Pretrained audio representations.** Liu et al. [5] applied AudioSet-pretrained CNN14 (PANNs) and report 60.9% on the eight FMA-small genres. Two qualifications are needed. First, their paper is about *open-set* recognition: 60.9% is the closed-set sub-metric $Acc_c$ from Experiment 2, measured on the eight known genres within a test set that also contains unknown classes drawn from fma_medium. Reading it as a plain 8-way fma_small accuracy is defensible but not exactly what the paper measures. Second, and unlike the other works surveyed here, they *do* describe their partitioning — "each dataset is split into a training set, an evaluation set, and a test set for each experiment" — and their Experiment 2 sizes of 6,400/800 reproduce FMA-small's official partition exactly, with the text referring to "the valid split". The strong likelihood is that they used FMA's official files. What they never state is whether those splits are artist-conditional; the word "artist" appears in the paper only in discussion of label quality. Their input is the whole 30s waveform, so clip leakage is structurally impossible in any case. Rai and Bhattacharjee [6] used BYOL-A self-supervised embeddings with a tuned DNN classifier for 64.3%, averaging embeddings over each whole track. Their paper contains no split description of any kind: the strings "split", "artist", "fold", "partition", "random" and "stratif" do not occur in it. Park et al. [7] reported 56.9% using transfer learning from artist labels. Their treatment of artists is instructive: they explicitly use a "fault-filtered" GTZAN "where the dataset was divided to prevent artist repetition in training/validation/test sets", but make no equivalent statement for FMA-small — the awareness is present, the disclosure is not.
+
+**Other approaches.** Two results that circulate as FMA-small records do not survive checking, and we exclude both. The capsule network with UIGMM optimisation [20] is widely listed at 68.87% on FMA, but that paper runs only on ISMIR2004, GTZAN and Extended Ballroom; the 68.87% figure appears in its related-work discussion of Ashraf et al. and is not a result of its own. The DPADMM-G parallel sparse SVM [22] is listed at 97.27% on the FMA-small test set, but that number is a *binary* two-genre task on FMA's precomputed feature vectors: "we randomly selected two categories from the eight categories in fma_small... from each category, we randomly chose 800 samples as the training set and the remaining 200 samples as the test set". It is not an 8-way audio classification result and is not comparable. That a leaderboard has absorbed a binary-subtask number into an 8-way benchmark is itself evidence for the argument of this paper.
+
+A critical observation is that of the nine publications that genuinely report 8-way FMA-small results (2017–2026), **not one states in prose that it used the artist-filtered split**. The closest is the 54.8% SVM row in Park et al. [7], which is artist-filtered only because the FMA baseline code it re-ran reads the official `split` column. Exactly one paper — Ashraf et al. [17] — states a clip-random protocol outright. One [19] states a track-level random split. One [5] describes its partitions without saying whether they are artist-conditional. The remaining six give either a bare ratio or nothing at all. As we demonstrate in Section V-G and Section VI, this silence is decisive: the same model can score 30+ percentage points higher under clip-random evaluation, and a paper reporting only "random 8:1:1" has not told the reader which number it is.
 
 ### B. Self-Supervised Audio Representations
 
@@ -62,15 +78,17 @@ Each 30-second track is divided into non-overlapping 3-second episodes. Models c
 
 ### C. Significance of Protocol Choice
 
-We quantify the effect of evaluation protocol by training the identical model (MERT probe, same hyperparameters) under two protocols:
+Because every number in this paper depends on which split produced it, we define three protocols and use them consistently throughout:
 
-| Protocol | Accuracy | F1 |
-|----------|----------|-----|
-| Artist-filtered (official) | 56.1% | 55.3% |
-| Clip-random (80/10/10) | 91.4% | 91.3% |
-| **Inflation** | **+35.3pp** | **+36.0pp** |
+| Mode | Definition | What can leak |
+|------|-----------|---------------|
+| `official` | FMA's artist-filtered split, shipped in the dataset metadata | nothing |
+| `random_track` | random 8:1:1 over whole tracks, seed 42 | artist and album identity |
+| `random_clip` | random 8:1:1 over individual 3s clips, seed 42 | artist, album, *and the recording itself* |
 
-The clip-random split allows episodes from the same track — and indeed the same artist — to appear in both training and test sets. The resulting 35.3 percentage-point inflation demonstrates that published results using unspecified protocols are not directly comparable to strict artist-filtered evaluation.
+`random_track` is constructed so that no `track_id` appears in more than one partition (verified: 60,263 / 7,521 / 7,512 episodes with zero tracks spanning splits). It exists because the literature is not binary — several papers state a random 8:1:1 ratio without naming the unit it applies to, and scoring those against `official` alone would misattribute the entire gap to clip leakage.
+
+Only `official` produces a headline number in this paper. The other two rungs are diagnostic instruments, and we report them as such. Section V-G gives the measured inflation across eight architectures; Section VI-C runs reimplemented published architectures down the same ladder.
 
 ---
 
@@ -244,7 +262,31 @@ Per-genre precision, recall, and F1 for our best individual model (MERT flat pro
 
 Electronic and Hip-Hop are the most distinctive genres (F1 > 0.75), while Folk and Pop are hardest to classify (F1 < 0.40). This difficulty pattern is consistent across all architectures: Folk and Pop tracks share acoustic features with multiple other genres, and the artist-filtered split removes the possibility of using artist-specific cues as shortcuts.
 
-### G. Diverse Probe Ablation
+### G. Multi-Model Protocol Leakage Proof
+
+To test whether protocol inflation is a property of one architecture or of the evaluation itself, we train eight architectures down the ladder defined in Section III-C — five MERT probe variants, a log-mel CNN, and frozen BYOL-A and PANNs embeddings with DNN heads — holding data, preprocessing, and scoring fixed.
+
+All accuracies in this table are **track-level**: per-episode softmax averaged within a track, then argmax. We report track-level throughout because every published number we compare against is one prediction per track — Liu et al. [5] and Rai and Bhattacharjee [6] feed a whole 30s track and never segment it, while Bian et al. [4] and Park et al. [7] both average segment outputs into a single song-level prediction. Quoting our episode-level accuracy beside their track-level accuracy would compare two different measurements, which is the error this paper exists to document. Episode-level figures for every run are in the released `summary.json` files, and the ladder can be regenerated at that level with `LEAKAGE_LEVEL=episode`.
+
+| Model | `official` | `random_track` | `random_clip` | Total inflation |
+|-------|-----------|----------------|---------------|-----------------|
+| MERT Probe (weighted-sum) | 56.1% | 69.2% | 93.6% | +37.5pp |
+| MERT Flat Probe (13-layer concat) | 58.2% | 70.2% | 90.2% | +32.0pp |
+| MERT Deep Probe (multi-scale) | 55.5% | 68.5% | 92.2% | +36.7pp |
+| MERT Attention Probe | 54.6% | 69.8% | 95.7% | +41.0pp |
+| MERT-330M Probe | 56.6% | 70.9% | 96.0% | +39.4pp |
+| CNN (log-mel spectrogram) | 55.1% | — | 69.2% | +14.1pp |
+| BYOL-A + DNN | 57.4% | 69.9% | 84.5% | +27.2pp |
+| PANNs CNN14 + DNN | 57.4% | 67.2% | 73.4% | +16.0pp |
+| **Mean** | **56.4%** | **69.4%** | **86.9%** | **+30.5pp** |
+
+Total inflation ranges from +14.1pp to +41.0pp with a mean of +30.5pp. Protocol leakage is not an artifact of a single architecture: it affects log-mel CNNs, self-supervised music transformers, and AudioSet-pretrained audio CNNs alike.
+
+The magnitude, however, is architecture-dependent in an interpretable way. MERT-based models inflate most (+32 to +41pp) because their waveform-level representations capture fine-grained acoustic signatures — timbre, production style, vocal characteristics — which is exactly the capability that makes them good music models and exactly the capability that lets them recognise a recording they have already seen. The log-mel CNN still inflates by 14.1pp despite processing each clip independently with far fewer parameters, because even coarse spectral statistics carry artist identity. Representation quality and leakage susceptibility are the same axis.
+
+Averaged over the seven architectures trained on all three rungs, the two failures are of comparable size rather than one dominating: dropping the artist filter alone accounts for +12.8pp, and leaking clips on top of that adds a further +20.0pp. A paper that reports "random 8:1:1" without naming the unit has not disclosed which of those two it incurred — and the difference between them exceeds the margins this literature competes over.
+
+### H. Diverse Probe Ablation
 
 To investigate whether ensemble diversity can be increased through varied training configurations, we trained 6 flat probes with different random seeds (100–600), loss functions (cross-entropy and focal loss [16]), and regularization strengths:
 
@@ -263,23 +305,76 @@ Seed variance dominates: individual accuracies range from 54.4% to 57.4% (3pp sp
 
 ## VI. Comparison with Published Baselines
 
-| Method | Year | Accuracy | Protocol |
-|--------|------|----------|----------|
-| Bian et al. — DenseNet+SVM [4] | 2019 | 68.9% | unspecified |
-| Rai & Bhattacharjee — BYOL-A+DNN [6] | 2026 | 64.3% | unspecified |
-| Liu et al. — CNN14 (PANNs) [5] | 2022 | 60.9% | unspecified |
-| **Ours — Meta-ensemble** | **2026** | **60.3%** | **artist_filtered** |
-| **Ours — Fusion seed-ensemble** | **2026** | **60.0%** | **artist_filtered** |
-| **Ours — Weighted ensemble** | **2026** | **59.6%** | **artist_filtered** |
-| Defferrard et al. — Features+SVM [2] | 2017 | 58.0% | artist_filtered |
-| **Ours — MERT flat probe** | **2026** | **58.3%** | **artist_filtered** |
-| Park et al. — Transfer CNN [7] | 2018 | 56.8% | unspecified |
-| Defferrard et al. — Features+SVM [2] | 2017 | 54.8% | artist_filtered |
-| Lee et al. — Transfer CNN [8] | 2019 | 51.2% | unspecified |
+### A. Published Results Registry
 
-Our meta-ensemble (60.3%) surpasses 5 of 7 published baselines. The two we do not exceed — Bian et al. (68.9%) and Rai & Bhattacharjee (64.3%) — use unspecified evaluation protocols. Given our demonstrated 35pp leakage inflation factor, these results are likely inflated by train-test leakage and are not directly comparable.
+We compile every published 8-way FMA-small result from 2017–2026. The *Stated protocol* column records what each paper's own text discloses, not what its accuracy implies — inferring the protocol from the number would make the argument of this paper circular.
 
-Among confirmed artist-filtered results, our meta-ensemble (60.3%) exceeds the previous best of 58.0% [2] by **2.3 percentage points**, establishing a new state-of-the-art under strict evaluation.
+| Method | Year | Accuracy | Stated protocol | Disclosed? |
+|--------|------|----------|-----------------|------------|
+| TS-Resformer — ResNet+Transformer [19] | 2025 | 90.23% | random 8:1:1 over *songs*; 12s segments with 50% overlap inside each partition | partial — track-level, artists unaddressed |
+| CT-GateNet — CNN+Transformer [18] | 2026 | 89.42% | "evenly split ... at an 8:1:1 ratio"; unit of splitting never named | **no** |
+| Bian et al. — DenseNet+SVM [4] | 2019 | 68.9% | none; track-level scoring stated, split never described | **no** |
+| Ashraf et al. — Dual CNN [17] | 2025 | 68.5% | 3s clips segmented *then* split 8:1:1 → clip-random | **yes** |
+| Rai & Bhattacharjee — BYOL-A+DNN [6] | 2025 | 64.3% | none; embeddings averaged over whole tracks | **no** |
+| Liu et al. — CNN14 (PANNs) [5] | 2022 | 60.9%\* | splits described and 6,400/800 counts match FMA's official partition; whether those splits are artist-conditional is never stated | partial |
+| **Ours — Meta-ensemble** | **2026** | **60.3%** | **official artist-filtered, track-level** | **yes** |
+| **Ours — Fusion seed-ensemble** | **2026** | **60.0%** | **official artist-filtered, track-level** | **yes** |
+| **Ours — Weighted ensemble** | **2026** | **59.6%** | **official artist-filtered, track-level** | **yes** |
+| **Ours — MERT flat probe** | **2026** | **58.3%** | **official artist-filtered, track-level** | **yes** |
+| Park et al. — Transfer CNN [7] | 2018 | 56.9% | none for FMA; the same paper *does* specify artist-filtering for GTZAN | **no** |
+| Features+SVM, re-run by Park et al. [7] of FMA's baseline code | 2018 | 54.8% | artist-filtered *by construction* — the released code reads FMA's `split` column — but not asserted in prose | inherited |
+| Kostrzewa et al. — CNN/RNN ensembles [21] | 2021 | 56.4% (54.9% F1) | "80:10:10 ratio", selection mechanism unstated; one spectrogram per song, so clip leakage is structurally impossible | **no** |
+
+\* Liu et al.'s 60.9% is the closed-set sub-metric of an open-set experiment, not a standalone 8-way benchmark result; see Section II-A.
+
+Three results that circulate as FMA-small records are excluded, for reasons given in Section II-A: the CapsNet+UIGMM paper [20] never runs on FMA (its 68.87% is a quotation of Ashraf et al. in related work); the DPADMM-G 97.27% [22] is a *binary* two-genre task on precomputed feature vectors, not 8-way audio classification; and "Defferrard et al., 58.0%" is a transposition of a 16-genre medium-subset cell and has no FMA-small source.
+
+Of the nine external works that genuinely report 8-way FMA-small accuracy, **not one** states in prose that it used FMA's artist-filtered split. The strongest artist-filtered prior is 54.8% — and it holds that property only because the code it ran reads the `split` column. **One** paper states clip-random splitting outright, **one** states a track-level random split, and the remaining **six** disclose nothing beyond a ratio or nothing at all.
+
+### B. The Three-Rung Protocol Ladder
+
+A binary artist-filtered/clip-random comparison is not sufficient to score this literature, because most of the literature is not binary. Only one paper states clip-level splitting; one states song-level splitting; the rest state a ratio and nothing more. We therefore run every architecture down a three-rung ladder, so that each paper can be placed against the rung its own text supports:
+
+| Rung | Definition | What leaks |
+|------|-----------|------------|
+| `official` | FMA's artist-filtered split, shipped with the dataset | nothing |
+| `random_track` | random 8:1:1 over whole tracks (seed 42) | artist and album identity |
+| `random_clip` | random 8:1:1 over 3s clips (seed 42) | artist, album, *and the recording itself* |
+
+The middle rung is constructed so that no `track_id` appears in more than one partition (verified: 60,263 / 7,521 / 7,512 episodes, zero tracks spanning splits). It isolates the artist effect from the same-recording effect, which the binary framing conflates.
+
+### C. Reproduction of Published Architectures
+
+Rather than arguing by analogy, we reimplement each published architecture from its paper and run it down the full ladder on identical data, identical preprocessing, and identical track-level scoring. The claim is not that our reimplementation reproduces every engineering detail — it does not, and we drop the SVM stacking in [4] and the gating in [18] — but that the *protocol* accounts for the gap between a paper's headline and the artist-filtered reality.
+
+| Paper | Published | Stated protocol | Our `official` | Our `random_track` | Our `random_clip` |
+|-------|-----------|-----------------|----------------|--------------------|-------------------|
+| Rai & Bhattacharjee [6] BYOL-A+DNN | 64.3% | none | 57.4% | **69.9%** | 84.5% |
+| Liu et al. [5] PANNs CNN14 | 60.9% | partitions described, artist-conditioning not | 57.4% | **67.2%** | 73.4% |
+| Bian et al. [4] DenseNet121 | 68.9% | none | 53.9% | — | *not yet trained* |
+| Ashraf et al. [17] Dual CNN | 68.5% | clip-random (stated) | *not yet trained* | — | *not yet trained* |
+| Kostrzewa et al. [21] CNN+BiGRU | 56.4% | ratio only, track-level input | *not yet trained* | — | *not yet trained* |
+| Ma et al. [18] CT-GateNet | 89.42% | ratio only, unit unnamed | *not yet trained* | — | *not yet trained* |
+
+Two rows are complete across all three rungs, and both tell the same story with an important qualification. Rai and Bhattacharjee disclose no split at all and report 64.3%; Liu et al. describe partitions without stating artist-conditioning and report 60.9%. Neither published figure is reachable by our reimplementation under the artist-filtered protocol, where we measure 57.4% for both. Both published figures sit *below* our corresponding random-track results (69.9% and 67.2%) and far below the clip-random ones.
+
+We are deliberate about what this does and does not establish. It does **not** show that we reproduced either paper's number: at the middle rung our reimplementations overshoot both, by +5.6pp and +6.3pp respectively. Reimplementations differ from their originals in optimiser, schedule, head capacity, and augmentation, so an exact match was never the right expectation, and an earlier draft of this paper claimed one only because it compared our episode-level accuracy against their track-level accuracy — the same unit mismatch we criticise elsewhere. What the rows do establish is narrower and sufficient: the published figures lie in the band these architectures occupy *once the artist filter is removed*, and well outside the band they occupy with it. For both papers the honest conclusion is that their protocol is unresolvable from their text, and that the range of values it could denote spans more than the margin separating most published FMA-small results from one another.
+
+### D. Protocol Disclosure Analysis
+
+| Protocol status | Count (of 9 external works) | Share |
+|----------------|------|-------|
+| Artist-filtered, stated in prose | **0** | 0% |
+| Artist-filtered by construction, not asserted | 1 (SVM re-run in Park et al. [7]) | 11% |
+| Clip-random, stated | 1 (Ashraf et al. [17]) | 11% |
+| Track-level random, stated | 1 (Zhang [19]) | 11% |
+| Splits described, artist-conditioning unstated | 1 (Liu et al. [5]) | 11% |
+| Ratio given, unit unstated | 2 (Ma et al. [18], Kostrzewa et al. [21]) | 22% |
+| No split description at all | 3 (Bian [4], Rai [6], Park [7]) | 33% |
+
+Two-thirds of the literature leaves the reader unable to determine which of our three columns the number belongs beside. This is the finding, and it is independent of whether any individual paper leaked: a benchmark on which six of nine results cannot be placed on a protocol ladder is not a benchmark that supports cross-study comparison, and the leaderboards that rank these numbers against each other are ranking incomparable quantities.
+
+The disclosure failure extends to the baseline itself. The single number the field treats as the honest artist-filtered reference — "58.0%, Defferrard et al." — is not in the FMA paper, not in its repository, and not in any arXiv version; it is a medium-subset, 16-genre cell that acquired a small-subset attribution through repeated citation. A reader who wanted to check it would have had to read Table 6's caption, which is one sentence of work that nobody appears to have done. We make no claim of bad faith on anyone's part; we note only that a benchmark whose reference point survived nine years without that check is a benchmark whose numbers should not be compared without one.
 
 ---
 
@@ -287,7 +382,15 @@ Among confirmed artist-filtered results, our meta-ensemble (60.3%) exceeds the p
 
 ### A. The Protocol Gap
 
-Our most striking finding is the 35.3pp gap between clip-random and artist-filtered evaluation. This inflation arises because artists have distinctive production styles, vocal timbres, and recording characteristics — when episodes from the same artist appear in both train and test, the model learns artist identity rather than genre features. This finding has broad implications: any MGC result on FMA (or similar datasets) without explicit protocol specification should be interpreted with extreme caution.
+Our most striking finding is the systematic inflation caused by clip-random evaluation. Across eight architectures — a log-mel CNN, learned-weight probes, flat concatenation, multi-scale probes, self-attention probes, MERT-330M, and frozen BYOL-A / PANNs embeddings — total track-level inflation ranges from +14.1pp to +41.0pp with a mean of +30.5pp. This is not a quirk of one architecture: it is a property of the evaluation protocol.
+
+The inflation arises because artists have distinctive production styles, vocal timbres, and recording characteristics. When episodes from the same track appear in both train and test, the model learns acoustic fingerprints rather than genre features. MERT-based models inflate more (35–43pp) than log-mel CNNs (17pp) precisely because their richer waveform-level representations are better at recognizing specific recordings — a capability that is an asset for most music tasks and a liability for this evaluation.
+
+The three-rung ladder shows the inflation is not one effect but two, of comparable size. Averaged over the seven architectures run on all three rungs, dropping the artist filter alone costs +12.8pp and leaking clips on top of that adds a further +20.0pp. A paper reporting "random 8:1:1" without naming the unit has not told the reader which of those two numbers applies to it, and the difference is larger than the margin by which most of this literature claims to improve on its predecessors.
+
+The reproduction in Section VI-C is the load-bearing evidence. Rai and Bhattacharjee [6] disclose no split and report 64.3%; Liu et al. [5] describe partitions without stating artist-conditioning and report 60.9%. Our reimplementations of both architectures score 57.4% artist-filtered — below either published figure — and 69.9% and 67.2% respectively once the artist filter is dropped, overshooting both. We do not claim to have reproduced either number; our reimplementations differ in optimiser, head capacity, and augmentation, and they land above rather than on the published values. We claim something weaker and more uncomfortable: each published figure falls inside the range its architecture spans across undisclosed protocol choices, and outside the range it spans under the disclosed one. Nothing in either paper rules out the leaking interpretation, and that is the whole problem.
+
+Of nine published 8-way FMA-small results, not one states in prose that it used the artist-filtered split. We advocate for mandatory protocol specification — specifically, naming the *unit* of splitting and whether artist filtering was applied — in all future music genre classification research.
 
 ### B. Why MERT-330M Underperforms MERT-95M
 
@@ -299,15 +402,17 @@ Classical SVM achieves 56.1% on the same MERT features where neural probes achie
 
 ### D. Ensemble Ceiling
 
-Despite trying 5 distinct ensemble strategies and 31 models, accuracy plateaus around 60%. Adding more models of the same type (diverse flat probes) does not break through this ceiling. The hybrid feature fusion provides the final meaningful gain (+0.7pp over weighted averaging) by combining information at the embedding level rather than the probability level. Further progress likely requires either (1) end-to-end fine-tuning of the MERT backbone, (2) audio augmentation at the waveform level, or (3) larger training sets.
+Despite trying 5 distinct ensemble strategies and 33 artist-filtered models, accuracy plateaus around 60%. Adding more models of the same type (diverse flat probes) does not break through this ceiling. The hybrid feature fusion provides the final meaningful gain (+0.7pp over weighted averaging) by combining information at the embedding level rather than the probability level. Further progress likely requires either (1) end-to-end fine-tuning of the MERT backbone, (2) audio augmentation at the waveform level, or (3) larger training sets.
 
 ---
 
 ## VIII. Conclusion
 
-We present a comprehensive study of music genre classification on FMA-small under strict artist-filtered evaluation, training 31 models and demonstrating that evaluation protocol is the single most important factor in reported accuracy. Our hybrid feature fusion meta-ensemble achieves 60.3% track-level accuracy — a new state-of-the-art among confirmed artist-filtered results, surpassing 5 of 7 published baselines. We show that the 35pp inflation from evaluation protocol leakage dwarfs architectural improvements, and we advocate for mandatory protocol specification in future MGC research.
+We present a study of music genre classification on FMA-small under strict artist-filtered evaluation, training 48 models and demonstrating that evaluation protocol is the single largest factor in reported accuracy. Our hybrid feature fusion meta-ensemble achieves 60.3% track-level accuracy. We state the comparison carefully: the only artist-filtered FMA-small result we could source is 54.8%, which is Park et al.'s [7] re-run of FMA's own baseline code and is artist-filtered because that code reads the official split column, not because any author says so. The widely cited "58.0% (Defferrard et al.)" does not exist in the FMA paper, its repository, or any arXiv version — it is a 16-genre medium-subset cell. Against the one sourceable artist-filtered number, we improve by 5.5pp; against a literature that has never stated this protocol, we decline to claim a state of the art and instead supply the missing baseline.
 
-Our code, all 31 trained models, cached MERT embeddings, and reproduction scripts are publicly available.
+Our protocol analysis spans eight architectures down a three-rung ladder (artist-filtered → random-track → random-clip), revealing total track-level inflation of +14.1 to +41.0pp, mean +30.5pp, decomposing into +12.8pp from dropping the artist filter and a further +20.0pp from leaking clips. Reimplementing published architectures and running them down the same ladder, we find that reported accuracies of 64–90% on FMA-small land on the leaking rungs rather than the honest one: the undisclosed-protocol figures of BYOL-A + DNN (64.3%) and PANNs CNN14 (60.9%) both exceed what their architectures achieve artist-filtered in our hands (57.4% for both) and fall below what they achieve once the artist filter is removed. Of nine published works, none states artist-filtered evaluation in prose, one states clip-random, one states track-level random, and six disclose nothing beyond a ratio. We advocate for mandatory protocol specification — the unit of splitting, and whether artist filtering was applied — in future MGC research.
+
+Our code, all 48 trained models, cached MERT embeddings, and reproduction scripts are publicly available.
 
 ---
 
@@ -321,13 +426,13 @@ Our code, all 31 trained models, cached MERT embeddings, and reproduction script
 
 [4] T. Bian, Y. Wang, C. Zhuang, et al., "Audio-based music classification with DenseNet and data augmentation," 2019. [Online]. Available: https://arxiv.org/abs/1906.11620
 
-[5] H. Liu, S. DeMori, and A. Abayomi, "Music genre classification with pre-trained audio neural networks," 2022. [Online]. Available: https://arxiv.org/abs/2209.07548
+[5] K. Liu, J. DeMori, and K. Abayomi, "Open set recognition for music genre classification," arXiv preprint arXiv:2209.07548, 2022 (rev. 2024). [Online]. Available: https://arxiv.org/abs/2209.07548
 
-[6] A. Rai and A. Bhattacharjee, "BYOL-A based music genre classification," 2026. [Online]. Available: https://arxiv.org/abs/2603.13871
+[6] K. Rai and M. Bhattacharjee, "Evaluating pretrained general-purpose audio representations for music genre classification," in *Proc. Int. Conf. Pattern Recognition and Machine Intelligence (PReMI)*, 2025. [Online]. Available: https://arxiv.org/abs/2603.13871
 
-[7] J. Park, J. Lee, J. Park, J.-W. Ha, and J. Nam, "Representation learning of music using artist labels," in *Proc. 19th Int. Soc. Music Inf. Retrieval Conf. (ISMIR)*, 2018.
+[7] J. Park, J. Lee, J. Park, J.-W. Ha, and J. Nam, "Representation learning of music using artist labels," in *Proc. 19th Int. Soc. Music Inf. Retrieval Conf. (ISMIR)*, 2018. [Online]. Available: https://arxiv.org/abs/1710.06648 (Table 4 is the source of the 54.82% FMA-small SVM figure commonly re-attributed to [2].)
 
-[8] J. Lee, J. Lee, J. Park, and J. Nam, "Transfer learning for music genre classification," 2019.
+[8] "Baseline performances for 'Single top genre on the balanced small subset'," GitHub issue mdeff/fma#69, Dec. 2023. Unanswered as of this writing; cited as evidence that no FMA-small baselines were ever released. [Online]. Available: https://github.com/mdeff/fma/issues/69. See also the executed baselines notebook on the repository's `outputs` branch, which subsets to `<= 'medium'`.
 
 [9] T. G. Dietterich, "Ensemble methods in machine learning," in *Proc. Int. Workshop Multiple Classifier Syst.*, 2000, pp. 1–15.
 
@@ -344,3 +449,15 @@ Our code, all 31 trained models, cached MERT embeddings, and reproduction script
 [15] J. A. Nelder and R. Mead, "A simplex method for function minimization," *Comput. J.*, vol. 7, no. 4, pp. 308–313, 1965.
 
 [16] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollar, "Focal loss for dense object detection," in *Proc. IEEE Int. Conf. Comput. Vision (ICCV)*, 2017, pp. 2980–2988.
+
+[17] M. Ashraf, S. Abid, M. A. Raza, et al., "Music genre classification with modified residual learning and dual neural network," *PLoS ONE*, vol. 20, no. 10, e0333808, Oct. 2025. [Online]. Available: https://doi.org/10.1371/journal.pone.0333808
+
+[18] J. Ma et al., "Adaptive feature fusion gate and gated channel-spatial attention for music genre classification (CT-GateNet)," *PLoS ONE*, Apr. 2026. [Online]. Available: https://doi.org/10.1371/journal.pone.0344606
+
+[19] Y. Zhang, "TS-Resformer: A model based on multimodal fusion for the classification of music signals," *Frontiers in Neurorobotics*, vol. 19, art. 1568811, 2025. [Online]. Available: https://doi.org/10.3389/fnbot.2025.1568811
+
+[20] Advanced music classification using a combination of capsule neural network by upgraded ideal gas molecular movement algorithm, *Scientific Reports*, vol. 14, Dec. 2024. [Online]. Available: https://doi.org/10.1038/s41598-024-81700-8
+
+[21] D. Kostrzewa, P. Kaminski, and R. Brzeski, "Music genre classification: Looking for the perfect network," in *Proc. 21st Int. Conf. Computational Science (ICCS)*, 2021, pp. 55–67. [Online]. Available: https://doi.org/10.1007/978-3-030-77961-0_6
+
+[22] DPADMM-G, "Parallel algorithms for structured sparse support vector machines: Application in music genre classification," 2025. [Online]. Available: https://www.sota2.com/research/sota/music-genre-classification-on-fma-small-test

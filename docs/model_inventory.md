@@ -162,10 +162,66 @@
 
 ## E. Protocol Comparison (Leakage Analysis)
 
+All accuracies in this section are **track-level** (per-episode softmax averaged
+within a track, then argmax), matching the rest of this document and every
+published figure we compare against. Episode-level numbers run 5-7pp lower; the
+two are not interchangeable.
+
 ### E1. MERT Probe Clip-Random (`mert_probe_cliprandom`)
 - **Same model as B3** but with clip-random (80/10/10) split
-- **Result**: **91.4% accuracy, 91.3% F1** (vs 56.1% on artist-filtered)
-- **Insight**: 35 percentage-point inflation from train-test leakage
+- **Result**: **93.6% accuracy** (vs 56.1% on artist-filtered)
+- **Insight**: +37.5 percentage-point inflation from train-test leakage
+
+### E2. Multi-Model Leakage Proof (Three-Rung Ladder, Track-Level)
+
+To confirm the inflation is architecture-independent, we trained eight
+architectures down the same three-rung ladder:
+
+- **Artist-filtered** (official FMA split): no artist appears in more than one split
+- **Random-track** (random 80/10/10 over whole tracks): clips never span splits, but artists do
+- **Clip-random** (random 80/10/10 over 3s clips): the same track appears in train and test
+
+The middle rung exists because the literature is not binary: most papers state a
+ratio without naming the *unit* it applies to.
+
+| ID | Model | Artist-filtered | Random-track | Clip-random | Total inflation |
+|----|-------|-----------------|--------------|-------------|-----------------|
+| E2a | MERT Probe (weighted-sum) | 56.1% | 69.2% | 93.6% | +37.5pp |
+| E2b | MERT Flat Probe (13-layer concat) | 58.2% | 70.2% | 90.2% | +32.0pp |
+| E2c | MERT Deep Probe (multi-scale) | 55.5% | 68.5% | 92.2% | +36.7pp |
+| E2d | MERT Attention Probe | 54.6% | 69.8% | 95.7% | +41.0pp |
+| E2e | MERT-330M Probe | 56.6% | 70.9% | 96.0% | +39.4pp |
+| E2f | CNN (log-mel spectrogram) | 55.1% | — | 69.2% | +14.1pp |
+| E2g | BYOL-A + DNN (Rai & Bhattacharjee 2025) | 57.4% | 69.9% | 84.5% | +27.2pp |
+| E2h | PANNs CNN14 (Liu et al. 2022) | 57.4% | 67.2% | 73.4% | +16.0pp |
+| | **Mean** | | | | **+30.5pp** |
+
+- **MERT models** inflate by +32 to +41pp: their rich waveform representations capture fine-grained acoustic signatures that enable effective recording fingerprinting across train/test episodes
+- **CNN** inflates by +14.1pp: even coarse spectral statistics carry enough recording identity to leak
+- **Frozen BYOL-A / PANNs embeddings** sit in between (+27.2 / +16.0pp), so the effect is not an artifact of one pretraining objective
+- **Decomposition** over the seven architectures on all three rungs: dropping the artist filter alone accounts for **+12.8pp**, leaking clips on top of that adds a further **+20.0pp**. Both failures matter and are of comparable size.
+- **Conclusion**: the inflation is systematic and architecture-independent, ranging from +14.1pp to +41.0pp across all eight architectures tested
+
+### E3. Reproduction of Published Architectures
+
+Each architecture reimplemented from its paper and run down the same ladder. The
+`Stated protocol` column records what the paper actually discloses — not what its
+accuracy implies.
+
+| Paper | Published | Stated protocol | Our artist-filtered | Our random-track | Our clip-random |
+|-------|-----------|-----------------|---------------------|------------------|-----------------|
+| Rai & Bhattacharjee 2025 | 64.3% | no split description at all | 57.4% | 69.9% | 84.5% |
+| Liu et al. 2022 | 60.9% | partitions described, artist-conditioning unstated | 57.4% | 67.2% | 73.4% |
+
+Neither reproduces its published number under the artist-filtered split, and both
+*overshoot* it by 5-6pp at the middle rung. We do not claim this identifies which
+protocol either paper used — where a paper never names its split, no column is the
+fair comparison, which is the point.
+
+**A withdrawn claim, kept visible.** An earlier revision of this document reported
+that our BYOL-A middle rung landed "within 1.1pp" of the published 64.3%. That
+compared our *episode-level* 63.2% against their *track-level* number — the exact
+unit mismatch this project exists to document. At track level we score 69.9%.
 
 ---
 
@@ -187,23 +243,69 @@
 
 ---
 
+## G. Reimplementations of Published Architectures
+
+Architectures rebuilt from their papers so the protocol ladder can be run on the
+*same* model families the literature reports, not only on ours. Results below are
+artist-filtered track-level; the ladder results are in Section E.
+
+### G1. BYOL-A + DNN (`byola_probe_v1`) — Rai & Bhattacharjee 2025
+- **Method**: frozen BYOL-A (AudioNTT2020) 2048-d embeddings → `EmbeddingProbe` MLP (512 → 256 → 8)
+- **Config**: lr=0.0003, batch_size=128, epochs=50
+- **Result**: **57.4% track accuracy, 57.0% track F1** (paper reports 64.3%, protocol unstated)
+
+### G2. PANNs CNN14 + classifier (`panns_probe_v1`) — Liu et al. 2022
+- **Method**: frozen AudioSet-pretrained CNN14 2048-d embeddings → same `EmbeddingProbe` head
+- **Config**: lr=0.0003, batch_size=128, epochs=50
+- **Result**: **57.4% track accuracy, 56.6% track F1** (paper reports 60.9%, artist-conditioning unstated)
+
+### G3. DenseNet121 (`densenet_v1`) — Bian et al. 2019
+- **Method**: torchvision DenseNet121 adapted to 1-channel log-mel, new classifier head; no SVM stacking (we isolate the CNN)
+- **Config**: lr=0.0003, batch_size=32, epochs=60, augment_spec=true
+- **Result**: 53.9% track accuracy, 52.2% track F1 (paper reports 68.9%, protocol unstated)
+- **Note**: clip-random twin not yet trained, so DenseNet is absent from the Section E ladder
+
+### G4-G7. Implemented, not yet trained
+`DualCNN` (Ashraf et al. 2025), `CNNBiGRU` (Kostrzewa et al. 2021), `CapsNet`
+(margin loss), and `CNNTransformer` (CT-GateNet style) exist in `src/models/` with
+configs for both splits, but have no completed runs. They are excluded from every
+table in this document rather than estimated.
+
+---
+
 ## Published Baselines for Comparison
 
-| Source | Year | Method | Accuracy | Protocol |
-|--------|------|--------|----------|----------|
-| Bian et al. | 2019 | DenseNet + SVM stacking | 68.9% | unspecified |
-| Rai & Bhattacharjee | 2026 | BYOL-A + DNN | 64.3% | unspecified |
-| Liu et al. | 2022 | CNN14 (PANNs) | 60.9% | unspecified |
-| Defferrard et al. | 2017 | Hand-crafted + SVM | 58.0% | artist_filtered |
-| Park et al. | 2018 | Transfer CNN | 56.8% | unspecified |
-| Defferrard et al. | 2017 | Hand-crafted + SVM | 54.8% | artist_filtered |
-| Lee et al. | 2019 | Transfer CNN | 51.2% | unspecified |
+`Stated protocol` records what each paper's own text discloses, never what its
+accuracy implies. Full quotes and sourcing in `docs/FULL_RESULTS.md`.
+
+| Source | Year | Method | Accuracy | Stated protocol |
+|--------|------|--------|----------|-----------------|
+| Zhang (TS-Resformer) | 2025 | ResNet + Transformer | 90.23% | random 8:1:1 over *songs*; overlap lives inside partitions |
+| Ma et al. (CT-GateNet) | 2026 | CNN + Transformer + gating | 89.42% | 8:1:1 ratio, **unit never named** |
+| Bian et al. | 2019 | DenseNet + SVM stacking | 68.9% | **none** |
+| Ashraf et al. | 2025 | Dual CNN, residual + hybrid pooling | 68.5% | **clip-random, stated** |
+| K. Rai & M. Bhattacharjee | 2025 (PReMI) | BYOL-A + DNN | 64.3% | **none** |
+| K. Liu, J. DeMori & K. Abayomi | 2022 | CNN14 (PANNs), open-set study | 60.9%* | partitions described; artist-conditioning not |
+| Park et al. | 2018 | Transfer CNN from artist labels | 56.9% | **none for FMA** (GTZAN is artist-separated) |
+| Kostrzewa et al. | 2021 | CNN/RNN/CRNN ensembles | 56.4% (54.9% F1) | 80:10:10 ratio, mechanism unstated |
+| Features+SVM, re-run by Park et al. | 2018 | FMA's released baseline code | 54.8% | artist-filtered *by construction*, not asserted |
+
+\* Closed-set sub-metric of an open-set experiment, not a standalone 8-way result.
+
+**Excluded, with reasons** — "Defferrard et al., 58.0% artist-filtered" exists in no
+version of the FMA paper or its repository (it is a 16-genre *medium*-subset cell;
+see [mdeff/fma#69](https://github.com/mdeff/fma/issues/69)); CapsNet+UIGMM's 68.87%
+is that paper quoting Ashraf et al. in related work, not its own result; DPADMM-G's
+97.27% is a binary two-genre task on precomputed features.
+
+Of these nine external works, **none** states in prose that it used FMA's
+artist-filtered split.
 
 ---
 
 ## Key Findings
 
-1. **Protocol matters more than architecture**: Same model shows 35pp gap between clip-random and artist-filtered splits. Papers with "unspecified" protocol may benefit from 10-35pp leakage inflation.
+1. **Protocol matters more than architecture**: across eight architectures run down the three-rung ladder (`official` → `random_track` → `random_clip`), total inflation is +14.1 to +41.0pp, mean +30.5pp (track-level). It decomposes into +12.8pp from dropping the artist filter and a further +20.0pp from leaking clips, so a paper reporting "random 8:1:1" without naming the unit has not disclosed its protocol.
 2. **MERT flat probe is strongest individual**: Concatenating all 13 layers (9,984-dim) beats learned weighted sum by 2pp for MERT-95M.
 3. **MERT-330M does not dramatically outperform MERT-95M**: Despite 3.5x more parameters, MERT-330M probe (56.6%) is worse than MERT-95M flat probe (58.3%). The bottleneck is not feature quality but the difficulty of artist-filtered genre classification.
 4. **Simple ensembles beat complex ones**: Weighted probability averaging > stacking > meta-learning. Only 800 val tracks means complex meta-learners overfit.

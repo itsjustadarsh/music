@@ -60,9 +60,10 @@ def build_scheduler(name: str, optimizer, epochs: int):
 
 
 def build_cnn_loaders(cfg: dict):
-    train_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "train", augment=cfg.get("augment_spec", False))
-    val_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "val", augment=False)
-    test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False)
+    split_mode = cfg.get("split_mode", "official")
+    train_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "train", augment=cfg.get("augment_spec", False), split_mode=split_mode)
+    val_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "val", augment=False, split_mode=split_mode)
+    test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, split_mode=split_mode)
     bs = cfg["batch_size"]
     return (
         DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=2),
@@ -229,9 +230,10 @@ def train(cfg: dict) -> Path:
         )
         mert_large_dir = DATA_DIR / "embeddings" / "mert_large"
         mert_large_manifest = mert_large_dir / "manifest.csv"
-        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train")
-        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val")
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test")
+        split_mode = cfg.get("split_mode", "official")
+        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train", split_mode=split_mode)
+        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val", split_mode=split_mode)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", split_mode=split_mode)
         bs = cfg["batch_size"]
         train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0)
         val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0)
@@ -251,9 +253,10 @@ def train(cfg: dict) -> Path:
         )
         mert_large_dir = DATA_DIR / "embeddings" / "mert_large"
         mert_large_manifest = mert_large_dir / "manifest.csv"
-        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train")
-        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val")
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test")
+        split_mode = cfg.get("split_mode", "official")
+        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train", split_mode=split_mode)
+        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val", split_mode=split_mode)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", split_mode=split_mode)
         bs = cfg["batch_size"]
         train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0)
         val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0)
@@ -273,13 +276,80 @@ def train(cfg: dict) -> Path:
         )
         mert_large_dir = DATA_DIR / "embeddings" / "mert_large"
         mert_large_manifest = mert_large_dir / "manifest.csv"
-        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train")
-        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val")
-        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test")
+        split_mode = cfg.get("split_mode", "official")
+        train_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "train", split_mode=split_mode)
+        val_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "val", split_mode=split_mode)
+        test_ds = MertEmbeddingDataset(mert_large_manifest, mert_large_dir, "test", split_mode=split_mode)
         bs = cfg["batch_size"]
         train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0)
         val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0)
         test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=0)
+    elif cfg["model"] == "densenet":
+        from src.models.densenet import GenreDenseNet
+
+        model = GenreDenseNet(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            pretrained=cfg.get("pretrained", True),
+        )
+        train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
+    elif cfg["model"] == "dual_cnn":
+        from src.models.dual_cnn import DualCNN
+
+        model = DualCNN(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+        )
+        train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
+    elif cfg["model"] == "cnn_bigru":
+        from src.models.cnn_bigru import CNNBiGRU
+
+        model = CNNBiGRU(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            gru_hidden=cfg.get("gru_hidden", 128),
+            gru_layers=cfg.get("gru_layers", 2),
+        )
+        train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
+    elif cfg["model"] == "capsnet":
+        from src.models.capsnet import CapsNet
+
+        model = CapsNet(
+            num_classes=NUM_CLASSES,
+            num_routing=cfg.get("num_routing", 3),
+        )
+        train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
+    elif cfg["model"] == "cnn_transformer":
+        from src.models.cnn_transformer import CNNTransformer
+
+        model = CNNTransformer(
+            num_classes=NUM_CLASSES,
+            dropout=cfg.get("dropout", 0.3),
+            d_model=cfg.get("d_model", 256),
+            nhead=cfg.get("nhead", 4),
+            num_transformer_layers=cfg.get("num_transformer_layers", 2),
+        )
+        train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
+    elif cfg["model"] == "embedding_probe":
+        from src.models.embedding_probe import EmbeddingProbe
+
+        model = EmbeddingProbe(
+            num_classes=NUM_CLASSES,
+            embed_dim=cfg["embed_dim"],
+            hidden_sizes=tuple(cfg.get("hidden_sizes", (512, 256))),
+            dropout=cfg.get("dropout", 0.4),
+        )
+        # BYOL-A and PANNs store one flat vector per episode, so MertEmbeddingDataset's
+        # "load the track's array, index the episode" logic applies unchanged.
+        embed_dir = DATA_DIR / "embeddings" / cfg["embedding_name"]
+        embed_manifest = embed_dir / "manifest.csv"
+        split_mode = cfg.get("split_mode", "official")
+        bs = cfg["batch_size"]
+        loaders = []
+        for split, shuffle in (("train", True), ("val", False), ("test", False)):
+            ds = MertEmbeddingDataset(embed_manifest, embed_dir, split, split_mode=split_mode)
+            loaders.append(DataLoader(ds, batch_size=bs, shuffle=shuffle, num_workers=0))
+        train_loader, val_loader, test_loader = loaders
     else:
         raise ValueError(f"Unknown model type: {cfg['model']}")
 

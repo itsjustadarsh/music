@@ -25,12 +25,24 @@ comparison in `docs/RESULTS.md`.
 appear in exactly one of train/validation/test. The FMA paper is explicit that dropping
 this is harmful -- using songs from the same artist in both train and test "leads to
 over-optimistic accuracy", because the model can recognise the artist's production
-signature instead of the genre. Ashraf et al. (2025), who report 68.80%, instead split
+signature instead of the genre. Ashraf et al. (2025), who report 68.5%, instead split
 *3-second clips* 8:1:1, which places clips of the **same track** on both sides of the
-split -- a stronger form of the same leakage. We use the official artist-filtered split
-throughout (`src/data/splits.py`), and reproduce the clip-random protocol only as a
-controlled measurement (`split_mode="random_clip"` in `src/training/dataset.py`), never
-as a headline number.
+split -- a stronger form of the same leakage.
+
+This is not a binary, and treating it as one would mis-score most of the literature.
+Most papers state a ratio ("random 8:1:1") without naming the *unit* it applies to, so
+we run a three-rung ladder (`split_mode` in `src/training/dataset.py`):
+
+| Mode | Definition | What leaks |
+|---|---|---|
+| `official` | FMA's shipped artist-filtered split | nothing |
+| `random_track` | random 8:1:1 over whole tracks, seed 42 | artist and album identity |
+| `random_clip` | random 8:1:1 over individual 3s clips, seed 42 | artist, album, **and the recording itself** |
+
+Only `official` may produce a headline number; the other two are diagnostic instruments,
+run on identical data, hyperparameters and epoch budgets so the only varying factor is the
+split (`scripts/protocol_leakage_analysis.py`). Across eight architectures the two leakier
+rungs cost +12.8pp and a further +20.0pp respectively.
 
 **Evaluation unit.** We train on 3-second episodes but a *track* is the thing being
 classified. Scoring per episode answers a different and easier-to-get-wrong question
@@ -39,8 +51,12 @@ averaging per-episode probabilities within a track and taking the argmax
 (`aggregate_to_tracks` in `src/evaluation/metrics.py`); averaging beats majority voting
 because a vote discards the confidence that should break ties between disagreeing
 episodes. Both numbers are written to `eval_metrics.json`; the track-level one is what
-the paper reports. On our CNN runs this accounts for roughly 3 accuracy points, so it is
-not a rounding detail.
+the paper reports, **including in the leakage ladder**, because every published figure we
+compare against is one prediction per track. The gap is 3-7 accuracy points depending on
+the model, so it is not a rounding detail: quoting an episode-level number beside a
+published track-level one once produced a spurious "reproduced within 1.1pp" claim in this
+project, which we withdrew (see `study/evaluation_protocols.md` §8). Two results can share
+a split and still be incomparable if one scores clips and the other scores songs.
 
 `src/evaluation/compare_baselines.py` therefore records a `protocol` and `eval_unit` for
 every published baseline and emits two separate tables. Where a paper does not state its
