@@ -1,9 +1,10 @@
 """PyTorch Datasets built on top of the preprocessed manifest.csv.
 
-Two datasets, one per model, since the cached representations differ:
-- LogMelDataset  -> GenreCNN            (reads logmel/*.npy)
-- WaveformDataset -> ASTGenreClassifier (reads waveform16k/*.npy, feature-extracted
-                                          lazily so augmentation happens on raw audio first)
+Two datasets, because the cached representations differ:
+- LogMelDataset       -> the from-scratch spectrogram models (reads logmel/*.npy)
+- MertEmbeddingDataset -> the frozen-backbone probes (reads cached layer stacks)
+
+Both take `split_mode`, which is what puts a run on a rung of the protocol ladder.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import torch
 from torch.utils.data import Dataset
 
 from src.models.common import GENRE_TO_IDX
-from src.training.augment import pitch_shift_waveform, spec_augment, time_stretch_waveform
+from src.training.augment import spec_augment
 
 
 SPLIT_MODES = ("official", "random_clip", "random_track")
@@ -141,61 +142,6 @@ class LogMelDataset(Dataset):
         return x, label
 
 
-class WaveformDataset(Dataset):
-    """Returns raw (possibly augmented) 16kHz waveforms; AST feature extraction
-    happens in the collate_fn so it can be batched efficiently."""
-
-    def __init__(
-        self,
-        manifest_path: Path,
-        processed_dir: Path,
-        split: str,
-        sample_rate: int = 16000,
-        pitch_shift: bool = False,
-        time_stretch: bool = False,
-        max_subclips_per_track: int | None = None,
-        return_track_ids: bool = False,
-        split_mode: str = "official",
-    ):
-        self.df = load_manifest(manifest_path, split, max_subclips_per_track, split_mode=split_mode)
-        self.processed_dir = Path(processed_dir)
-        self.sample_rate = sample_rate
-        self.pitch_shift = pitch_shift and split == "train"
-        self.time_stretch = time_stretch and split == "train"
-        self.return_track_ids = return_track_ids
-
-    def __len__(self) -> int:
-        return len(self.df)
-
-    def __getitem__(self, idx: int):
-        row = self.df.iloc[idx]
-        wave = np.load(self.processed_dir / row["waveform_path"])
-        if self.pitch_shift:
-            wave = pitch_shift_waveform(wave, self.sample_rate)
-        if self.time_stretch:
-            wave = time_stretch_waveform(wave)
-        label = GENRE_TO_IDX[row["genre"]]
-        if self.return_track_ids:
-            return wave, label, int(row["track_id"])
-        return wave, label
-
-
-def make_ast_collate_fn(feature_extractor):
-    def collate(batch):
-        # Datasets yield (wave, label) normally and (wave, label, track_id) when
-        # return_track_ids is set for track-level evaluation.
-        if len(batch[0]) == 3:
-            waves, labels, track_ids = zip(*batch)
-        else:
-            waves, labels = zip(*batch)
-            track_ids = None
-        out = feature_extractor(list(waves), sampling_rate=16000, return_tensors="pt")
-        labels = torch.tensor(labels, dtype=torch.long)
-        if track_ids is None:
-            return out["input_values"], labels
-        return out["input_values"], labels, torch.tensor(track_ids, dtype=torch.long)
-
-    return collate
 
 
 class MertEmbeddingDataset(Dataset):

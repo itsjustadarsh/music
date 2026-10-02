@@ -54,6 +54,7 @@ LABELS = {
     "mert_large_flat_probe": "MERT-330M flat probe (25-layer concat)",
     "mert_large_deep_probe": "MERT-330M deep probe (multi-scale)",
     "xgboost_mert": "Tree ensemble on MERT embeddings",
+    "ensemble": "Ensemble of per-architecture bests",
 }
 
 SPLIT_LABEL = {

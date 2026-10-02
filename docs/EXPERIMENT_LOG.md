@@ -6,12 +6,14 @@
 > with the hyperparameters it was trained under. Regenerate with
 > `python scripts/update_results.py`.
 
-49 evaluated runs. All accuracies track-level.
+52 evaluated runs. All accuracies track-level.
 
-## artist-filtered (`official`) — 34 runs
+## artist-filtered (`official`) — 36 runs
 
 | Run | Architecture | Accuracy | Macro-F1 | Hyperparameters |
 |---|---|---|---|---|
+| `ensemble_uniform` | Ensemble of per-architecture bests | 58.5% | 58.2% | — |
+| `ensemble_weighted` | Ensemble of per-architecture bests | 58.2% | 58.1% | — |
 | `mert_flat_probe_v1` | MERT-95M flat probe (13-layer concat) | 58.2% | 57.8% | lr=0.0003, batch_size=128, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.001, dropout=0.5, label_smoothing=0.1, mixup_alpha=0.3, seed=42 |
 | `mert_flat_probe_v2` | MERT-95M flat probe (13-layer concat) | 57.8% | 57.3% | lr=0.0001, batch_size=64, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.01, dropout=0.6, label_smoothing=0.15, mixup_alpha=0.4, seed=42 |
 | `byola_probe_v1` | BYOL-A + DNN probe | 57.4% | 57.0% | lr=0.0003, batch_size=128, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.001, dropout=0.4, label_smoothing=0.1, mixup_alpha=0.3, seed=42 |
@@ -47,13 +49,14 @@
 | `cnn_augmented` | GenreCNN (log-mel, from scratch) | 51.4% | 50.4% | lr=0.001, batch_size=64, epochs=30, optimizer=adam, scheduler=cosine, weight_decay=1e-05, seed=42 |
 | `cnn_baseline` | GenreCNN (log-mel, from scratch) | 47.1% | 45.0% | lr=0.001, batch_size=64, epochs=25, optimizer=adam, scheduler=none, weight_decay=0.0, seed=42 |
 
-## random-track (`random_track`) — 7 runs
+## random-track (`random_track`) — 8 runs
 
 **Diagnostic only.** These runs deliberately leak and exist to measure the cost
 of doing so. No number in this section may be quoted as a result.
 
 | Run | Architecture | Accuracy | Macro-F1 | Hyperparameters |
 |---|---|---|---|---|
+| `mert_large_flat_v1_randomtrack` | MERT-330M flat probe (25-layer concat) | 71.2% | 71.5% | lr=0.0001, batch_size=64, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.01, dropout=0.6, label_smoothing=0.15, mixup_alpha=0.4, seed=42 |
 | `mert_large_probe_v1_randomtrack` | MERT-330M probe (learned layer weights) | 70.9% | 71.2% | lr=0.0005, batch_size=128, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.0001, dropout=0.4, label_smoothing=0.1, mixup_alpha=0.2, seed=42 |
 | `mert_flat_probe_v1_randomtrack` | MERT-95M flat probe (13-layer concat) | 70.2% | 70.6% | lr=0.0003, batch_size=128, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.001, dropout=0.5, label_smoothing=0.1, mixup_alpha=0.3, seed=42 |
 | `byola_probe_v1_randomtrack` | BYOL-A + DNN probe | 69.9% | 70.3% | lr=0.0003, batch_size=128, epochs=50, optimizer=adamw, scheduler=cosine, weight_decay=0.001, dropout=0.4, label_smoothing=0.1, mixup_alpha=0.3, seed=42 |

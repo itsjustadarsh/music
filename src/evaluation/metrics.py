@@ -2,8 +2,7 @@
 per-genre precision/recall, and a confusion matrix plot.
 
 Usage:
-    python -m src.evaluation.metrics --run cnn_augmented
-    python -m src.evaluation.metrics --run ast_baseline
+    python -m src.evaluation.metrics --run mert_flat_probe_v1
 
 Reads outputs/<run>/config.json + best.pt, evaluates on the FMA-small test
 split, writes outputs/<run>/eval_metrics.json and docs/figures/<run>_confusion_matrix.png.
@@ -27,7 +26,7 @@ from torch.utils.data import DataLoader
 from src.config import DATA_DIR, DOCS_DIR, FMA_GENRES, OUTPUT_DIR, PROCESSED_DIR
 from src.models.cnn import GenreCNN
 from src.models.common import IDX_TO_GENRE, NUM_CLASSES, get_device
-from src.training.dataset import LogMelDataset, MertEmbeddingDataset, WaveformDataset, make_ast_collate_fn
+from src.training.dataset import LogMelDataset, MertEmbeddingDataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)

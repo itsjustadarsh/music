@@ -36,11 +36,18 @@ SPLITS = ("train", "val", "test")
 
 
 def _build(run_name: str, cfg: dict, split: str):
-    """Return (model, dataset, collate_fn) for one split of a trained run."""
+    """Return (model, dataset, collate_fn) for one split of a trained run.
+
+    The run's own `split_mode` is honoured. Defaulting it to `official` here would
+    silently cache a leaky run against the artist-filtered partition, producing a
+    file that looks comparable to every other cache and is not.
+    """
     collate_fn = None
+    split_mode = cfg.get("split_mode", "official")
     if cfg["model"] == "cnn":
         model = GenreCNN(num_classes=NUM_CLASSES)
-        ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, split, augment=False, return_track_ids=True)
+        ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, split, augment=False,
+                           return_track_ids=True, split_mode=split_mode)
     elif cfg["model"] == "mert_probe":
         from src.models.mert_probe import MertProbe
 
@@ -52,7 +59,8 @@ def _build(run_name: str, cfg: dict, split: str):
             layer_index=cfg.get("layer_index"),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split, return_track_ids=True
+            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_attn_probe":
         from src.models.mert_attn_probe import MertAttentionProbe
@@ -65,7 +73,8 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.3),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split, return_track_ids=True
+            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "resnet":
         from src.models.resnet_cnn import GenreResNet
@@ -75,7 +84,8 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.4),
             embed_dim=cfg.get("embed_dim", 256),
         )
-        ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, split, augment=False, return_track_ids=True)
+        ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, split, augment=False,
+                           return_track_ids=True, split_mode=split_mode)
     elif cfg["model"] == "mert_deep_probe":
         from src.models.mert_deep_probe import MertDeepProbe
 
@@ -87,7 +97,8 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.4),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split, return_track_ids=True
+            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] in ("mert_flat_probe",):
         from src.models.mert_flat_probe import MertFlatProbe
@@ -98,7 +109,8 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.5),
         )
         ds = MertEmbeddingDataset(
-            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split, return_track_ids=True
+            MERT_MANIFEST_PATH, MERT_EMBEDDINGS_DIR, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_large_probe":
         from src.models.mert_probe import MertProbe
@@ -116,7 +128,8 @@ def _build(run_name: str, cfg: dict, split: str):
             layer_index=cfg.get("layer_index"),
         )
         ds = MertEmbeddingDataset(
-            mert_large_manifest, mert_large_dir, split, return_track_ids=True
+            mert_large_manifest, mert_large_dir, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_large_flat_probe":
         from src.models.mert_flat_probe import MertFlatProbe
@@ -132,7 +145,8 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.5),
         )
         ds = MertEmbeddingDataset(
-            mert_large_manifest, mert_large_dir, split, return_track_ids=True
+            mert_large_manifest, mert_large_dir, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     elif cfg["model"] == "mert_large_deep_probe":
         from src.models.mert_deep_probe import MertDeepProbe
@@ -150,7 +164,24 @@ def _build(run_name: str, cfg: dict, split: str):
             dropout=cfg.get("dropout", 0.4),
         )
         ds = MertEmbeddingDataset(
-            mert_large_manifest, mert_large_dir, split, return_track_ids=True
+            mert_large_manifest, mert_large_dir, split,
+            return_track_ids=True, split_mode=split_mode,
+        )
+    elif cfg["model"] == "embedding_probe":
+        from src.models.embedding_probe import EmbeddingProbe
+
+        # BYOL-A and PANNs store one flat vector per episode, so MertEmbeddingDataset's
+        # "load the track's array, index the episode" logic applies unchanged.
+        embed_dir = DATA_DIR / "embeddings" / cfg["embedding_name"]
+        model = EmbeddingProbe(
+            num_classes=NUM_CLASSES,
+            embed_dim=cfg["embed_dim"],
+            hidden_sizes=tuple(cfg.get("hidden_sizes", (512, 256))),
+            dropout=cfg.get("dropout", 0.4),
+        )
+        ds = MertEmbeddingDataset(
+            embed_dir / "manifest.csv", embed_dir, split,
+            return_track_ids=True, split_mode=split_mode,
         )
     else:
         raise ValueError(f"Caching not supported for model type {cfg['model']!r}")
