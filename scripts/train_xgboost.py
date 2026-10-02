@@ -31,12 +31,14 @@ MERT_EMB_DIR = DATA_DIR / "embeddings" / "mert"
 MERT_MANIFEST = MERT_EMB_DIR / "manifest.csv"
 
 
-def load_embeddings(split: str, layer_weights: np.ndarray | None = None):
+def load_embeddings(split: str, layer_weights: np.ndarray | None = None, split_mode: str = "official"):
     """Load MERT embeddings for a split, optionally using learned layer weights.
 
     Returns (features, labels, track_ids) where features is (n_episodes, hidden_dim).
     """
-    ds = MertEmbeddingDataset(MERT_MANIFEST, MERT_EMB_DIR, split, return_track_ids=True)
+    ds = MertEmbeddingDataset(
+        MERT_MANIFEST, MERT_EMB_DIR, split, return_track_ids=True, split_mode=split_mode
+    )
     features, labels, track_ids = [], [], []
 
     for i in range(len(ds)):
@@ -88,7 +90,7 @@ def track_level_evaluate(probs: np.ndarray, labels: np.ndarray, track_ids: np.nd
     return acc, f1, per_genre, track_probs, track_labels, np.array(unique_tracks)
 
 
-def main(mert_run: str = "mert_probe_wide"):
+def main(mert_run: str = "mert_probe_wide", split_mode: str = "official", run_name: str | None = None):
     # Load layer weights from the MERT probe
     layer_weights = None
     probe_dir = OUTPUT_DIR / mert_run
@@ -105,10 +107,10 @@ def main(mert_run: str = "mert_probe_wide"):
                     print(f"  Layer {i:2d}: {w:.3f} {bar}")
                 print()
 
-    print("Loading embeddings...")
-    X_train, y_train, tid_train = load_embeddings("train", layer_weights)
-    X_val, y_val, tid_val = load_embeddings("val", layer_weights)
-    X_test, y_test, tid_test = load_embeddings("test", layer_weights)
+    print(f"Loading embeddings (split_mode={split_mode})...")
+    X_train, y_train, tid_train = load_embeddings("train", layer_weights, split_mode)
+    X_val, y_val, tid_val = load_embeddings("val", layer_weights, split_mode)
+    X_test, y_test, tid_test = load_embeddings("test", layer_weights, split_mode)
 
     # Subsample training to 1 episode per track to reduce memory
     unique_train_tids = np.unique(tid_train)
@@ -174,13 +176,14 @@ def main(mert_run: str = "mert_probe_wide"):
         print(f"    {genre:<15} {acc:>6.1%} {bar}")
 
     # Save results
-    run_dir = OUTPUT_DIR / "xgboost_mert"
+    run_dir = OUTPUT_DIR / (run_name or "xgboost_mert")
     run_dir.mkdir(exist_ok=True)
 
     # Save config
     config = {
         "model": "xgboost_mert",
         "mert_run": mert_run,
+        "split_mode": split_mode,
         "best_params": best_params,
         "batch_size": 256,  # for compatibility with cache_outputs
     }
@@ -218,5 +221,7 @@ def main(mert_run: str = "mert_probe_wide"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mert-run", default="mert_probe_wide")
+    parser.add_argument("--split-mode", default="official", choices=["official", "random_track", "random_clip"])
+    parser.add_argument("--run-name", default=None, help="output dir name; defaults to xgboost_mert")
     args = parser.parse_args()
-    main(args.mert_run)
+    main(args.mert_run, args.split_mode, args.run_name)

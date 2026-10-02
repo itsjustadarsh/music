@@ -131,41 +131,6 @@ def evaluate_run(run_name: str) -> dict:
         model = GenreCNN(num_classes=NUM_CLASSES)
         test_ds = LogMelDataset(MANIFEST_PATH, PROCESSED_DIR, "test", augment=False, return_track_ids=True, split_mode=split_mode)
         loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
-    elif cfg["model"] == "ast":
-        from src.models.modern_model import ASTGenreClassifier, load_feature_extractor
-
-        model = ASTGenreClassifier(num_classes=NUM_CLASSES)
-        fe = load_feature_extractor()
-        test_ds = WaveformDataset(MANIFEST_PATH, PROCESSED_DIR, "test", return_track_ids=True, split_mode=split_mode)
-        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False, collate_fn=make_ast_collate_fn(fe))
-    elif cfg["model"] == "mert_probe":
-        from src.models.mert_probe import MertProbe
-
-        mert_emb_dir = DATA_DIR / "embeddings" / "mert"
-        mert_manifest = mert_emb_dir / "manifest.csv"
-        model = MertProbe(
-            num_classes=NUM_CLASSES,
-            proj_size=cfg.get("proj_size", 512),
-            dropout=cfg.get("dropout", 0.3),
-            learn_layer_weights=cfg.get("learn_layer_weights", True),
-            layer_index=cfg.get("layer_index"),
-        )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
-        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
-    elif cfg["model"] == "mert_attn_probe":
-        from src.models.mert_attn_probe import MertAttentionProbe
-
-        mert_emb_dir = DATA_DIR / "embeddings" / "mert"
-        mert_manifest = mert_emb_dir / "manifest.csv"
-        model = MertAttentionProbe(
-            num_classes=NUM_CLASSES,
-            n_heads=cfg.get("n_heads", 8),
-            attn_layers=cfg.get("attn_layers", 2),
-            mlp_size=cfg.get("mlp_size", 512),
-            dropout=cfg.get("dropout", 0.3),
-        )
-        test_ds = MertEmbeddingDataset(mert_manifest, mert_emb_dir, "test", return_track_ids=True, split_mode=split_mode)
-        loader = DataLoader(test_ds, batch_size=cfg["batch_size"], shuffle=False)
     elif cfg["model"] == "resnet":
         from src.models.resnet_cnn import GenreResNet
 

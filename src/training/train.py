@@ -1,4 +1,4 @@
-"""Train either GenreCNN or ASTGenreClassifier from a YAML config.
+"""Train any registered genre model from a YAML config.
 
 Usage:
     python -m src.training.train --config src/training/configs/cnn_baseline.yaml
@@ -26,12 +26,7 @@ from torch.utils.data import DataLoader
 from src.config import DATA_DIR, OUTPUT_DIR, PROCESSED_DIR
 from src.models.cnn import GenreCNN
 from src.models.common import NUM_CLASSES, get_device
-from src.training.dataset import (
-    LogMelDataset,
-    MertEmbeddingDataset,
-    WaveformDataset,
-    make_ast_collate_fn,
-)
+from src.training.dataset import LogMelDataset, MertEmbeddingDataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -69,34 +64,6 @@ def build_cnn_loaders(cfg: dict):
         DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=2),
         DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=2),
         DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=2),
-    )
-
-
-def build_ast_loaders(cfg: dict):
-    from src.models.modern_model import load_feature_extractor
-
-    fe = load_feature_extractor()
-    collate = make_ast_collate_fn(fe)
-    # AST pads every 3s clip to its 1024-frame input, so a step costs ~1200 tokens
-    # through an 87M-param model -- training on all ~10 sub-clips per track is not
-    # tractable on a laptop. Subsample train/val only; the test loader stays on the
-    # full split so AST test numbers remain comparable with the CNN runs.
-    max_subclips = cfg.get("max_subclips_per_track")
-    train_ds = WaveformDataset(
-        MANIFEST_PATH, PROCESSED_DIR, "train",
-        pitch_shift=cfg.get("pitch_shift", False), time_stretch=cfg.get("time_stretch", False),
-        max_subclips_per_track=max_subclips,
-    )
-    val_ds = WaveformDataset(MANIFEST_PATH, PROCESSED_DIR, "val", max_subclips_per_track=max_subclips)
-    test_ds = WaveformDataset(MANIFEST_PATH, PROCESSED_DIR, "test")
-    bs = cfg["batch_size"]
-    # num_workers=0: the HF feature extractor closure isn't picklable for worker
-    # processes, and waveform loading (small cached .npy files) is cheap enough
-    # that single-process loading isn't a bottleneck.
-    return (
-        DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0, collate_fn=collate),
-        DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0, collate_fn=collate),
-        DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=0, collate_fn=collate),
     )
 
 
@@ -161,11 +128,6 @@ def train(cfg: dict) -> Path:
     if cfg["model"] == "cnn":
         model = GenreCNN(num_classes=NUM_CLASSES)
         train_loader, val_loader, test_loader = build_cnn_loaders(cfg)
-    elif cfg["model"] == "ast":
-        from src.models.modern_model import ASTGenreClassifier
-
-        model = ASTGenreClassifier(num_classes=NUM_CLASSES, freeze_encoder_layers=cfg.get("freeze_encoder_layers", 0))
-        train_loader, val_loader, test_loader = build_ast_loaders(cfg)
     elif cfg["model"] == "mert_probe":
         from src.models.mert_probe import MertProbe
 

@@ -1,0 +1,15 @@
+run_name: mert_large_flat_v1_cliprandom
+model: mert_large_flat_probe
+epochs: 50
+batch_size: 64
+lr: 0.0001
+weight_decay: 0.01
+optimizer: adamw
+scheduler: cosine
+proj_size: 512
+dropout: 0.6
+seed: 42
+early_stopping_patience: 12
+label_smoothing: 0.15
+mixup_alpha: 0.4
+split_mode: random_clip

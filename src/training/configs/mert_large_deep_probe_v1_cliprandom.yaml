@@ -1,0 +1,17 @@
+run_name: mert_large_deep_probe_v1_cliprandom
+model: mert_large_deep_probe
+epochs: 50
+batch_size: 64
+lr: 0.0003
+weight_decay: 0.001
+optimizer: adamw
+scheduler: cosine
+proj_size: 768
+n_groups: 5
+n_residual_blocks: 2
+dropout: 0.4
+seed: 42
+early_stopping_patience: 10
+label_smoothing: 0.1
+mixup_alpha: 0.2
+split_mode: random_clip

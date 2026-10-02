@@ -241,9 +241,16 @@ def load_our_results(run_names: list[str]) -> list[dict]:
         # added; fall back to the flat shape so older result files still load.
         track = metrics.get("track_level", metrics)
         clip = metrics.get("clip_level", track)
+        # Read the run's real split, never assume it. A leaky run listed as
+        # "artist-filtered" would be exactly the substitution this project documents.
+        cfg_path = OUTPUT_DIR / run_name / "config.json"
+        split_mode = "official"
+        if cfg_path.exists():
+            split_mode = json.loads(cfg_path.read_text()).get("split_mode", "official")
         results.append(
             {
                 "run_name": run_name,
+                "split_mode": split_mode,
                 "accuracy_pct": track.get("accuracy", 0) * 100,
                 "macro_f1_pct": track.get("macro_f1", 0) * 100,
                 "clip_accuracy_pct": clip.get("accuracy", 0) * 100,
@@ -251,6 +258,13 @@ def load_our_results(run_names: list[str]) -> list[dict]:
             }
         )
     return results
+
+
+OUR_PROTOCOL_LABEL = {
+    "official": "official artist-filtered",
+    "random_track": "random split over tracks (artists leak)",
+    "random_clip": "random split over 3s clips (recordings leak)",
+}
 
 
 def _baseline_row(b: PublishedBaseline) -> str:
@@ -295,7 +309,8 @@ def build_comparison_table(our_results: list[dict]) -> str:
         (
             r["accuracy_pct"],
             f"| **Ours -- {r['run_name']}** | **{r['accuracy_pct']:.1f}%** | "
-            f"**{r['macro_f1_pct']:.1f}%** | **official artist-filtered** | track | this work |",
+            f"**{r['macro_f1_pct']:.1f}%** | "
+            f"**{OUR_PROTOCOL_LABEL.get(r['split_mode'], r['split_mode'])}** | track | this work |",
         )
         for r in our_results
     ]
@@ -306,7 +321,9 @@ def build_comparison_table(our_results: list[dict]) -> str:
     n_cr = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "clip_random")
     n_rt = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "random_track")
     n_un = sum(1 for b in PUBLISHED_BASELINES if b.protocol == "unspecified")
-    best = max((r["accuracy_pct"] for r in our_results), default=0.0)
+    # Only artist-filtered runs of ours are eligible to be "our best". Quoting a
+    # random_clip run here would be the same error we document in everyone else.
+    best = max((r["accuracy_pct"] for r in our_results if r["split_mode"] == "official"), default=0.0)
     comparable = [b for b in PUBLISHED_BASELINES if b.protocol == "artist_filtered"]
     best_comparable = max((b.accuracy_pct for b in comparable), default=0.0)
 

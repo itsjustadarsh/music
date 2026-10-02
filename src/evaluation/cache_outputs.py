@@ -152,19 +152,6 @@ def _build(run_name: str, cfg: dict, split: str):
         ds = MertEmbeddingDataset(
             mert_large_manifest, mert_large_dir, split, return_track_ids=True
         )
-    elif cfg["model"] == "ast":
-        from src.models.modern_model import ASTGenreClassifier, load_feature_extractor
-        from src.training.dataset import WaveformDataset, make_ast_collate_fn
-
-        model = ASTGenreClassifier(
-            num_classes=NUM_CLASSES,
-            freeze_encoder_layers=cfg.get("freeze_encoder_layers", 0),
-        )
-        ds = WaveformDataset(
-            MANIFEST_PATH, PROCESSED_DIR, split,
-            return_track_ids=True,
-        )
-        collate_fn = make_ast_collate_fn(load_feature_extractor())
     else:
         raise ValueError(f"Caching not supported for model type {cfg['model']!r}")
     return model, ds, collate_fn
