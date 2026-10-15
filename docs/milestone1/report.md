@@ -65,6 +65,15 @@ Table I summarises the registry. Of the nine external results, zero state artist
 \end{table*}
 ```
 
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{literature_scatter.pdf}
+\caption{Published FMA-small accuracies over time. Red circles denote results whose evaluation protocol is not stated; the blue star marks our artist-filtered ensemble. The dashed line is our best result (58.5\%). Results above the line are not necessarily better --- they may reflect a more permissive protocol.}
+\label{fig:literature}
+\end{figure}
+```
+
 One widely cited baseline --- "Defferrard et al., 58.0\%" --- does not exist. The FMA paper's only accuracy table covers the 16-genre medium subset; 58 is the MLP cell there. The 54.8\% attributed to FMA's authors is actually Park et al.'s re-run of FMA's released baseline code [@park2018representation], artist-filtered by code inheritance rather than authorial claim.
 
 ## B. Precedent in Other Fields
@@ -166,6 +175,15 @@ Table II presents the best run per architecture (13 unique architectures), ranke
 \end{table}
 ```
 
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{architecture_bars.pdf}
+\caption{Best track-level accuracy per architecture under the artist-filtered protocol. The top four models (58.2--58.5\%) are within seed noise of each other.}
+\label{fig:archbars}
+\end{figure}
+```
+
 The best single model is the MERT-95M flat probe (58.2\%), which concatenates all 13 transformer layers into a 9,984-dimensional feature vector and trains a two-layer MLP. A uniform-weight ensemble of per-architecture bests reaches 58.5\%. Notably, MERT-330M does not outperform MERT-95M, and learned ensemble weights lose to fixed uniform averaging --- both symptoms of overfitting at this data scale (6,400 training tracks).
 
 ## B. Complete Run Inventory
@@ -221,6 +239,15 @@ Table III presents all 36 artist-filtered runs, including hyperparameter variant
 \bottomrule
 \end{tabular}
 \end{table*}
+```
+
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{seed_stability.pdf}
+\caption{Run-to-run variability for architectures with multiple training runs. Box plots show median and quartiles; red diamonds mark means. The MERT Flat probe spans 3.8~pp across 7 runs differing only in seed and regularisation.}
+\label{fig:seeds}
+\end{figure}
 ```
 
 Key observations from the full inventory: (a) The MERT-95M flat probe spans 54.4--58.2\% across 7 runs differing only in seed and regularisation, a 3.8 pp range from hyperparameters alone. (b) Seed ablations for the MERT-95M probe (seeds 1--3, 42) span 53.5--56.4\%, showing that a 3 pp difference between two papers could be seed noise. (c) The CNN baseline improves from 47.1\% to 55.1\% (+8.0 pp) through augmentation and hyperparameter tuning alone, without any architectural change.
@@ -304,11 +331,50 @@ PANNs CNN14 \cite{kong2020panns} & 57.4 & 67.2 & 73.4 & +16.0 \\
 \end{table*}
 ```
 
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{leakage_bars.pdf}
+\caption{Protocol leakage across all eight architectures. Blue bars show artist-filtered accuracy; orange bars show random-track; red bars show clip-random. Red annotations above each bar show the total inflation in percentage points. The MERT attention probe inflates by +41~pp --- from 54.6\% to 95.7\%.}
+\label{fig:leakage}
+\end{figure*}
+```
+
 Decomposed over the seven architectures with all three rungs: dropping the artist filter alone accounts for +12.8 pp, and leaking clips on top of that adds a further +20.0 pp. The effect is systematic and architecture-independent, spanning from-scratch CNNs (+14.1 pp) to attention-based MERT probes (+41.0 pp).
 
 The MERT attention probe illustrates the extreme: 54.6\% under honest evaluation, 95.7\% under clip-random. The attention mechanism excels at acoustic fingerprinting --- recognising *which recording* it has heard --- which is rewarded under clip-random but irrelevant under artist-filtered evaluation.
 
-## E. Against Published Literature
+## E. Genre-Specific Leakage Analysis
+
+Not all genres inflate equally. We computed per-genre F1 under each protocol for all 8 architectures tested on the full ladder. The results reveal a clear pattern: genres that models find hardest under honest evaluation are precisely the ones most inflated by leakage.
+
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{genre_leakage_decomposition.pdf}
+\caption{Per-genre leakage decomposition, averaged across 8 architectures. Genres are sorted by total inflation (clip-random minus artist-filtered). Folk inflates by +49.8~pp; Hip-Hop by only +14.0~pp. The orange segment isolates artist leakage; the red segment isolates clip leakage on top of that.}
+\label{fig:genre_decomp}
+\end{figure}
+```
+
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{genre_inflation_heatmap.pdf}
+\caption{Genre-specific inflation (pp) for each architecture. Dark cells indicate high inflation. Folk and Instrumental are consistently the most inflated genres; Hip-Hop and Electronic are the least. The MERT attention probe on Instrumental inflates by +63~pp.}
+\label{fig:genre_heatmap_infl}
+\end{figure}
+```
+
+Folk (+49.8 pp mean inflation), Instrumental (+45.2 pp), and Experimental (+42.8 pp) inflate the most. These are also the three hardest genres under honest evaluation (36.1\%, 40.9\%, and 41.4\% mean F1 respectively). The explanation is straightforward: these genres are stylistically diffuse --- "Folk" contains acoustic singer-songwriters, Celtic fiddle tunes, and Appalachian banjo --- so models cannot learn reliable genre features and instead learn to recognise *which recording* they have heard. Under clip-random evaluation, this recognition is rewarded; under artist-filtered, it is irrelevant.
+
+Conversely, Hip-Hop (+14.0 pp) and Electronic (+16.3 pp) inflate the least. These genres have strong acoustic signatures (rhythmic patterns, synthesiser timbres, vocal processing) that transfer across artists, so models can classify them genuinely rather than by memorisation. Hip-Hop is the best-classified genre under both protocols (78.4\% artist-filtered, 92.5\% clip-random).
+
+The decomposition also reveals where each leakage type dominates. For Folk, artist leakage alone accounts for +34.6 pp --- removing the artist boundary lets models exploit shared production aesthetics within an artist's catalogue. For Pop, clip leakage contributes disproportionately (+24.7 pp on top of artist leakage), suggesting Pop tracks are recognised by their specific recording more than by artist style.
+
+The most extreme single cell is MERT attention probe on Instrumental: 31.1\% under artist-filtered, 94.5\% under clip-random --- a +63.4 pp inflation. The attention mechanism, designed to weight the most informative transformer layers, becomes an acoustic fingerprinter when permitted to see test clips during training.
+
+## F. Against Published Literature
 
 Our best artist-filtered model reaches 58.5\%. The only published number carrying an artist-filtered guarantee is 54.8\% (Park et al.'s re-run of FMA's baseline code [@park2018representation]), a margin of +3.7 pp. We deliberately do not report a "beats N of M" count: ranking against numbers whose protocol is unknown would treat incomparable quantities as comparable, which is the failure this project documents.
 
@@ -320,6 +386,24 @@ For two architectures we reimplemented from published work, the published number
 This is consistent with several explanations, including protocol differences and probe-head fidelity. The architecture-fidelity confound is as large as the effect, so we do not adjudicate.
 
 # Discussion
+
+```{=latex}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{genre_heatmap.pdf}
+\caption{Per-genre F1 (\%) across the ten best architectures. Hip-Hop and Electronic are consistently well-classified (76--82\%); Folk and Pop are hardest (26--44\%), likely due to stylistic overlap with other genres.}
+\label{fig:heatmap}
+\end{figure}
+```
+
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{training_curves.pdf}
+\caption{Training dynamics for five representative architectures. (a)~Validation macro-F1: probe models (MERT, BYOL-A, PANNs) converge in under 10 epochs; from-scratch models (GenreCNN, DenseNet) need 30--40. (b)~Training loss: probe losses plateau higher because the frozen backbone limits representational flexibility.}
+\label{fig:curves}
+\end{figure*}
+```
 
 ## A. The Research Gap
 
