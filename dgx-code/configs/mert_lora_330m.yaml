@@ -1,0 +1,45 @@
+# MERT-v1-330M with LoRA fine-tuning — most likely to beat 58.5%
+# LoRA injects ~2M trainable params into attention layers while keeping
+# the 330M backbone frozen. Best tradeoff for 6.4k training tracks.
+run_name: mert_lora_330m
+model: mert_finetune
+checkpoint: "m-a-p/MERT-v1-330M"
+num_classes: 8
+
+# Fine-tuning strategy
+use_lora: true
+lora_rank: 16
+lora_alpha: 32
+unfreeze_layers: 0
+pool_mode: weighted
+gradient_checkpointing: true
+
+# Data
+dataset_type: episode
+target_sr: 24000
+episode_sec: 3.0
+batch_size: 64
+num_workers: 4
+
+# Optimisation
+epochs: 30
+lr: 0.0002
+weight_decay: 0.01
+optimizer: adamw
+scheduler: cosine_warmup
+warmup_steps: 200
+grad_accum_steps: 2
+max_grad_norm: 1.0
+
+# Regularisation
+dropout: 0.3
+label_smoothing: 0.1
+mixup_alpha: 0.3
+
+# Classifier head
+classifier_hidden: 512
+
+# Training
+seed: 42
+early_stopping_patience: 10
+use_amp: true

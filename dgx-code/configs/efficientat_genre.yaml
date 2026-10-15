@@ -1,0 +1,29 @@
+# EfficientAT-style lightweight CNN for diversity in ensemble
+# Much smaller model (~3M params), fast to train, different architecture family
+run_name: efficientat_genre
+model: efficientat
+num_classes: 8
+
+target_sr: 32000
+max_duration_sec: 10.0
+
+dataset_type: episode
+episode_sec: 10.0
+batch_size: 64
+num_workers: 4
+
+epochs: 60
+lr: 0.0003
+weight_decay: 0.01
+scheduler: cosine_warmup
+warmup_steps: 300
+grad_accum_steps: 1
+max_grad_norm: 1.0
+
+dropout: 0.3
+label_smoothing: 0.1
+mixup_alpha: 0.3
+
+seed: 42
+early_stopping_patience: 15
+use_amp: true
