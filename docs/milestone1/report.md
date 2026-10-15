@@ -50,15 +50,15 @@ Table I summarises the registry. Of the nine external results, zero state artist
 \toprule
 \textbf{\#} & \textbf{Method} & \textbf{Year} & \textbf{Acc.\ (\%)} & \textbf{What the paper states about its split} \\
 \midrule
-1 & TS-Resformer \cite{zhang2025tsresformer} & 2025 & 90.2 & Random 8:1:1 over \emph{songs}; artists unaddressed \\
-2 & CT-GateNet \cite{ma2026ctgatenet} & 2026 & 89.4 & ``8:1:1 ratio'' --- unit unnamed \\
-3 & DenseNet + augmentation \cite{bian2019audio} & 2019 & 68.9 & Nothing \\
-4 & Dual residual CNN \cite{ashraf2025music} & 2025 & 68.5 & Clip-random, stated outright \\
-5 & BYOL-A + DNN \cite{rai2025evaluating} & 2025 & 64.3 & Nothing \\
-6 & PANNs CNN14 \cite{liu2022openset} & 2022 & 60.9* & Partitions described; artist-conditioning unstated \\
-7 & Transfer CNN \cite{park2018representation} & 2018 & 56.9 & Nothing for FMA \\
-8 & CNN/RNN ensemble \cite{kostrzewa2021music} & 2021 & 56.4 & ``80:10:10 ratio''; mechanism unstated \\
-9 & Features + SVM (FMA baseline re-run) \cite{park2018representation} & 2018 & 54.8 & Artist-filtered by construction, not by claim \\
+1 & TS-Resformer \cite{ref-zhang2025tsresformer} & 2025 & 90.2 & Random 8:1:1 over \emph{songs}; artists unaddressed \\
+2 & CT-GateNet \cite{ref-ma2026ctgatenet} & 2026 & 89.4 & ``8:1:1 ratio'' --- unit unnamed \\
+3 & DenseNet + augmentation \cite{ref-bian2019audio} & 2019 & 68.9 & Nothing \\
+4 & Dual residual CNN \cite{ref-ashraf2025music} & 2025 & 68.5 & Clip-random, stated outright \\
+5 & BYOL-A + DNN \cite{ref-rai2025evaluating} & 2025 & 64.3 & Nothing \\
+6 & PANNs CNN14 \cite{ref-liu2022openset} & 2022 & 60.9* & Partitions described; artist-conditioning unstated \\
+7 & Transfer CNN \cite{ref-park2018representation} & 2018 & 56.9 & Nothing for FMA \\
+8 & CNN/RNN ensemble \cite{ref-kostrzewa2021music} & 2021 & 56.4 & ``80:10:10 ratio''; mechanism unstated \\
+9 & Features + SVM (FMA baseline re-run) \cite{ref-park2018representation} & 2018 & 54.8 & Artist-filtered by construction, not by claim \\
 \midrule
   & \textbf{Ours --- Ensemble} & 2026 & \textbf{58.5} & \textbf{Official artist-filtered, track-level} \\
 \bottomrule
@@ -67,7 +67,7 @@ Table I summarises the registry. Of the nine external results, zero state artist
 \end{table*}
 ```
 
-One widely cited baseline --- "Defferrard et al., 58.0%" --- does not exist. The FMA paper's only accuracy table covers the 16-genre medium subset; 58 is the MLP cell there. The 54.8% attributed to FMA's authors is actually Park et al.'s re-run of FMA's released baseline code [@park2018representation], artist-filtered by code inheritance rather than authorial claim.
+One widely cited baseline --- "Defferrard et al., 58.0\%" --- does not exist. The FMA paper's only accuracy table covers the 16-genre medium subset; 58 is the MLP cell there. The 54.8\% attributed to FMA's authors is actually Park et al.'s re-run of FMA's released baseline code [@park2018representation], artist-filtered by code inheritance rather than authorial claim.
 
 ## B. Precedent in Other Fields
 
@@ -97,9 +97,9 @@ All accuracies are track-level: per-episode softmax probabilities are averaged w
 
 We train 13 architectures spanning three families:
 
-**From-scratch spectrogram models** consume 128-bin log-mel spectrograms and train all parameters from scratch: GenreCNN (4-block CNN), DenseNet121 [@huang2017densenet; @bian2019audio], and others.
+**From-scratch spectrogram models** consume 128-bin log-mel spectrograms and train all parameters from scratch: GenreCNN (4-block CNN) [@choi2017transfer], DenseNet121 [@huang2017densenet; @bian2019audio].
 
-**Frozen-backbone probes** train only a lightweight head on cached embeddings from pretrained models: MERT-v1-95M and MERT-v1-330M [@li2023mert] (multiple probe architectures), BYOL-A [@niizumi2023byola], and PANNs CNN14 [@kong2020panns].
+**Frozen-backbone probes** train only a lightweight head on cached embeddings from pretrained models: MERT-v1-95M and MERT-v1-330M [@li2023mert] with four probe architectures (learned weighted-sum [@pasad2021layer], flat concatenation, multi-scale deep probe [@yang2021superb], attention pooling [@safari2020self]), BYOL-A [@niizumi2023byola], and PANNs CNN14 [@kong2020panns].
 
 **Non-neural baseline.** XGBoost [@chen2016xgboost] on flattened MERT embeddings.
 
@@ -109,43 +109,150 @@ We conducted 52 evaluated training runs: 36 under the artist-filtered split, 8 u
 
 # V. Results
 
-## A. Model Comparison
+## A. Best Model Per Architecture
 
-Table II presents all 13 architectures ranked by accuracy under the artist-filtered, track-level protocol. Each architecture is cited to the foundational work it builds upon.
+Table II presents the best run per architecture (13 unique architectures), ranked by accuracy under the artist-filtered, track-level protocol.
 
 ```{=latex}
 \begin{table}[t]
 \centering
-\caption{All Architectures Under Artist-Filtered, Track-Level Evaluation}
-\label{tab:models}
+\caption{Best Run Per Architecture (Artist-Filtered, Track-Level)}
+\label{tab:best}
 \footnotesize
 \begin{tabular}{clcc}
 \toprule
 \textbf{\#} & \textbf{Architecture} & \textbf{Acc.} & \textbf{F1} \\
 \midrule
-1 & Ensemble (uniform avg) \cite{kittler1998combining} & 58.5 & 58.2 \\
-2 & MERT-95M flat probe \cite{li2023mert} & 58.2 & 57.8 \\
-3 & BYOL-A + DNN probe \cite{niizumi2023byola} & 57.4 & 57.0 \\
-4 & PANNs CNN14 probe \cite{kong2020panns} & 57.4 & 56.6 \\
-5 & MERT-330M probe (learned wt.) \cite{li2023mert} & 56.6 & 56.5 \\
-6 & MERT-330M flat probe \cite{li2023mert} & 56.5 & 55.9 \\
-7 & MERT-95M probe (learned wt.) \cite{pasad2021layer} & 56.4 & 55.7 \\
-8 & MERT-95M deep probe \cite{yang2021superb} & 56.0 & 55.9 \\
-9 & MERT-95M attention probe \cite{safari2020self} & 55.2 & 54.4 \\
-10 & GenreCNN (log-mel) \cite{choi2017transfer} & 55.1 & 54.2 \\
-11 & MERT-330M deep probe \cite{yang2021superb} & 54.9 & 55.5 \\
-12 & DenseNet121 \cite{huang2017densenet,bian2019audio} & 53.9 & 52.2 \\
-13 & XGBoost on MERT \cite{chen2016xgboost} & 52.5 & 51.4 \\
+1 & Ensemble (uniform) \cite{ref-kittler1998combining} & 58.5 & 58.2 \\
+2 & MERT-95M flat probe \cite{ref-li2023mert} & 58.2 & 57.8 \\
+3 & BYOL-A + DNN probe \cite{ref-niizumi2023byola} & 57.4 & 57.0 \\
+4 & PANNs CNN14 probe \cite{ref-kong2020panns} & 57.4 & 56.6 \\
+5 & MERT-330M probe \cite{ref-li2023mert} & 56.6 & 56.5 \\
+6 & MERT-330M flat probe \cite{ref-li2023mert} & 56.5 & 55.9 \\
+7 & MERT-95M probe \cite{ref-pasad2021layer} & 56.4 & 55.7 \\
+8 & MERT-95M deep probe \cite{ref-yang2021superb} & 56.0 & 55.9 \\
+9 & MERT-95M attn probe \cite{ref-safari2020self} & 55.2 & 54.4 \\
+10 & GenreCNN (log-mel) \cite{ref-choi2017transfer} & 55.1 & 54.2 \\
+11 & MERT-330M deep probe \cite{ref-yang2021superb} & 54.9 & 55.5 \\
+12 & DenseNet121 \cite{ref-huang2017densenet} & 53.9 & 52.2 \\
+13 & XGBoost on MERT \cite{ref-chen2016xgboost} & 52.5 & 51.4 \\
 \bottomrule
 \end{tabular}
 \end{table}
 ```
 
-The best single model is the MERT-95M flat probe (58.2%), which concatenates all 13 transformer layers into a 9,984-dimensional feature vector and trains a two-layer MLP. A uniform-weight ensemble of per-architecture bests reaches 58.5%. Notably, MERT-330M does not outperform MERT-95M, and learned ensemble weights lose to fixed uniform averaging --- both symptoms of overfitting at this data scale (6,400 training tracks).
+The best single model is the MERT-95M flat probe (58.2\%), which concatenates all 13 transformer layers into a 9,984-dimensional feature vector and trains a two-layer MLP. A uniform-weight ensemble of per-architecture bests reaches 58.5\%. Notably, MERT-330M does not outperform MERT-95M, and learned ensemble weights lose to fixed uniform averaging --- both symptoms of overfitting at this data scale (6,400 training tracks).
 
-## B. Protocol Leakage
+## B. Complete Run Inventory
 
-Table III presents the core finding: identical architectures trained under all three protocols. The same model moves by 14 to 41 percentage points depending solely on the evaluation protocol.
+Table III presents all 36 artist-filtered runs, including hyperparameter variants and seed ablations. This complete inventory demonstrates the sensitivity of each architecture to training configuration and provides the full evidence base behind the best-per-architecture summary above.
+
+```{=latex}
+\begin{table*}[t]
+\centering
+\caption{Complete Inventory: All 36 Artist-Filtered Runs (Track-Level Accuracy and Macro-F1, \%)}
+\label{tab:allruns}
+\scriptsize
+\begin{tabular}{rllccccccl}
+\toprule
+\textbf{\#} & \textbf{Run} & \textbf{Architecture} & \textbf{Acc.} & \textbf{F1} & \textbf{LR} & \textbf{BS} & \textbf{Ep.} & \textbf{Drop.} & \textbf{Ref.} \\
+\midrule
+1 & ensemble\_uniform & Ensemble (uniform avg) & 58.5 & 58.2 & --- & --- & --- & --- & \cite{ref-kittler1998combining} \\
+2 & ensemble\_weighted & Ensemble (weighted avg) & 58.2 & 58.1 & --- & --- & --- & --- & \cite{ref-kittler1998combining} \\
+3 & mert\_flat\_probe\_v1 & MERT-95M flat probe & 58.2 & 57.8 & 3e-4 & 128 & 50 & 0.5 & \cite{ref-li2023mert} \\
+4 & mert\_flat\_probe\_v2 & MERT-95M flat probe & 57.8 & 57.3 & 1e-4 & 64 & 50 & 0.6 & \cite{ref-li2023mert} \\
+5 & byola\_probe\_v1 & BYOL-A + DNN probe & 57.4 & 57.0 & 3e-4 & 128 & 50 & 0.4 & \cite{ref-niizumi2023byola} \\
+6 & mert\_flat\_diverse\_s3 & MERT-95M flat probe & 57.4 & 56.5 & 2e-4 & 128 & 50 & 0.6 & \cite{ref-li2023mert} \\
+7 & panns\_probe\_v1 & PANNs CNN14 probe & 57.4 & 56.6 & 3e-4 & 128 & 50 & 0.4 & \cite{ref-kong2020panns} \\
+8 & mert\_flat\_diverse\_s4 & MERT-95M flat probe & 56.6 & 56.1 & 3e-4 & 128 & 50 & 0.5 & \cite{ref-li2023mert} \\
+9 & mert\_large\_probe\_v1 & MERT-330M probe & 56.6 & 56.5 & 5e-4 & 128 & 50 & 0.4 & \cite{ref-li2023mert} \\
+10 & mert\_flat\_diverse\_s1 & MERT-95M flat probe & 56.5 & 55.8 & 3e-4 & 128 & 50 & 0.5 & \cite{ref-li2023mert} \\
+11 & mert\_large\_flat\_v1 & MERT-330M flat probe & 56.5 & 55.9 & 1e-4 & 64 & 50 & 0.6 & \cite{ref-li2023mert} \\
+12 & mert\_probe\_tuned & MERT-95M probe (learned wt.) & 56.4 & 55.7 & 2e-4 & 64 & 60 & 0.5 & \cite{ref-pasad2021layer} \\
+13 & mert\_large\_probe\_v3 & MERT-330M probe & 56.2 & 56.2 & 1e-4 & 128 & 50 & 0.3 & \cite{ref-li2023mert} \\
+14 & mert\_probe\_wide & MERT-95M probe (learned wt.) & 56.1 & 55.3 & 5e-4 & 128 & 40 & 0.4 & \cite{ref-pasad2021layer} \\
+15 & mert\_deep\_probe\_v2 & MERT-95M deep probe & 56.0 & 55.9 & 1e-4 & 64 & 60 & 0.5 & \cite{ref-yang2021superb} \\
+16 & mert\_flat\_diverse\_s6 & MERT-95M flat probe & 56.0 & 55.4 & 2.5e-4 & 128 & 50 & 0.55 & \cite{ref-li2023mert} \\
+17 & mert\_probe\_baseline & MERT-95M probe (learned wt.) & 55.9 & 54.9 & 1e-3 & 256 & 40 & 0.3 & \cite{ref-pasad2021layer} \\
+18 & mert\_flat\_diverse\_s5 & MERT-95M flat probe & 55.8 & 55.6 & 4e-4 & 128 & 50 & 0.4 & \cite{ref-li2023mert} \\
+19 & mert\_deep\_probe\_v1 & MERT-95M deep probe & 55.5 & 55.0 & 3e-4 & 128 & 60 & 0.4 & \cite{ref-yang2021superb} \\
+20 & mert\_attn\_probe\_v2 & MERT-95M attention probe & 55.2 & 54.4 & 5e-4 & 128 & 60 & 0.4 & \cite{ref-safari2020self} \\
+21 & mert\_probe\_seed2 & MERT-95M probe (seed 2) & 55.2 & 55.0 & 5e-4 & 128 & 40 & 0.4 & \cite{ref-pasad2021layer} \\
+22 & cnn\_improved & GenreCNN (log-mel) & 55.1 & 54.2 & 3e-4 & 32 & 60 & --- & \cite{ref-choi2017transfer} \\
+23 & mert\_large\_probe\_v2 & MERT-330M probe & 55.0 & 55.0 & 3e-4 & 64 & 50 & 0.5 & \cite{ref-li2023mert} \\
+24 & mert\_probe\_deep & MERT-95M probe (deep head) & 55.0 & 54.4 & 1e-4 & 256 & 80 & 0.5 & \cite{ref-pasad2021layer} \\
+25 & mert\_large\_deep\_v1 & MERT-330M deep probe & 54.9 & 55.5 & 3e-4 & 64 & 50 & 0.4 & \cite{ref-yang2021superb} \\
+26 & mert\_attn\_probe\_v1 & MERT-95M attention probe & 54.6 & 53.6 & 3e-4 & 128 & 60 & 0.3 & \cite{ref-safari2020self} \\
+27 & mert\_probe\_seed3 & MERT-95M probe (seed 3) & 54.5 & 54.4 & 5e-4 & 128 & 40 & 0.4 & \cite{ref-pasad2021layer} \\
+28 & mert\_flat\_diverse\_s2 & MERT-95M flat probe & 54.4 & 53.7 & 3e-4 & 128 & 50 & 0.5 & \cite{ref-li2023mert} \\
+29 & densenet\_v1 & DenseNet121 & 53.9 & 52.2 & 3e-4 & 32 & 60 & 0.3 & \cite{ref-huang2017densenet} \\
+30 & mert\_attn\_probe\_v3 & MERT-95M attention probe & 53.5 & 52.8 & 1e-4 & 64 & 60 & 0.2 & \cite{ref-safari2020self} \\
+31 & mert\_probe\_seed1 & MERT-95M probe (seed 1) & 53.5 & 52.9 & 5e-4 & 128 & 40 & 0.4 & \cite{ref-pasad2021layer} \\
+32 & cnn\_tuned\_lr & GenreCNN (log-mel) & 52.9 & 52.2 & 3e-4 & 32 & 35 & --- & \cite{ref-choi2017transfer} \\
+33 & mert\_probe\_lastlayer & MERT-95M probe (last layer) & 52.8 & 51.8 & 1e-3 & 256 & 40 & 0.3 & \cite{ref-pasad2021layer} \\
+34 & xgboost\_mert & XGBoost on MERT & 52.5 & 51.4 & --- & 256 & --- & --- & \cite{ref-chen2016xgboost} \\
+35 & cnn\_augmented & GenreCNN (log-mel) & 51.4 & 50.4 & 1e-3 & 64 & 30 & --- & \cite{ref-choi2017transfer} \\
+36 & cnn\_baseline & GenreCNN (log-mel) & 47.1 & 45.0 & 1e-3 & 64 & 25 & --- & \cite{ref-choi2017transfer} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+```
+
+Key observations from the full inventory: (a) The MERT-95M flat probe spans 54.4--58.2\% across 7 runs differing only in seed and regularisation, a 3.8 pp range from hyperparameters alone. (b) Seed ablations for the MERT-95M probe (seeds 1--3, 42) span 53.5--56.4\%, showing that a 3 pp difference between two papers could be seed noise. (c) The CNN baseline improves from 47.1\% to 55.1\% (+8.0 pp) through augmentation and hyperparameter tuning alone, without any architectural change.
+
+## C. Diagnostic Runs: Protocol Leakage
+
+Tables IV and V present the 16 diagnostic runs under relaxed protocols, run solely to quantify inflation. No number in these tables may be quoted as a result.
+
+```{=latex}
+\begin{table}[t]
+\centering
+\caption{Random-Track Diagnostic Runs (\textbf{not results} --- artist leakage only)}
+\label{tab:randomtrack}
+\footnotesize
+\begin{tabular}{lcc}
+\toprule
+\textbf{Architecture} & \textbf{Acc.} & \textbf{F1} \\
+\midrule
+MERT-330M flat probe \cite{ref-li2023mert} & 71.2 & 71.5 \\
+MERT-330M probe \cite{ref-li2023mert} & 70.9 & 71.2 \\
+MERT-95M flat probe \cite{ref-li2023mert} & 70.2 & 70.6 \\
+BYOL-A + DNN \cite{ref-niizumi2023byola} & 69.9 & 70.3 \\
+MERT-95M attn probe \cite{ref-safari2020self} & 69.8 & 70.1 \\
+MERT-95M probe \cite{ref-pasad2021layer} & 69.2 & 69.6 \\
+MERT-95M deep probe \cite{ref-yang2021superb} & 68.5 & 69.0 \\
+PANNs CNN14 \cite{ref-kong2020panns} & 67.2 & 67.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+```
+
+```{=latex}
+\begin{table}[t]
+\centering
+\caption{Clip-Random Diagnostic Runs (\textbf{not results} --- full leakage)}
+\label{tab:cliprandom}
+\footnotesize
+\begin{tabular}{lcc}
+\toprule
+\textbf{Architecture} & \textbf{Acc.} & \textbf{F1} \\
+\midrule
+MERT-330M probe \cite{ref-li2023mert} & 96.0 & 96.0 \\
+MERT-95M attn probe \cite{ref-safari2020self} & 95.7 & 95.7 \\
+MERT-95M probe \cite{ref-pasad2021layer} & 93.6 & 93.6 \\
+MERT-95M deep probe \cite{ref-yang2021superb} & 92.2 & 92.2 \\
+MERT-95M flat probe \cite{ref-li2023mert} & 90.2 & 90.2 \\
+BYOL-A + DNN \cite{ref-niizumi2023byola} & 84.5 & 84.5 \\
+PANNs CNN14 \cite{ref-kong2020panns} & 73.4 & 73.0 \\
+GenreCNN (log-mel) \cite{ref-choi2017transfer} & 69.2 & 68.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+```
+
+## D. Protocol Leakage Ladder
+
+Table VI combines the three protocols for the 8 architectures tested on all rungs. This is the project's core measurement.
 
 ```{=latex}
 \begin{table*}[t]
@@ -157,14 +264,14 @@ Table III presents the core finding: identical architectures trained under all t
 \toprule
 \textbf{Model} & \textbf{Artist-filtered} & \textbf{Random-track} & \textbf{Clip-random} & \textbf{Inflation (pp)} \\
 \midrule
-MERT Probe (weighted-sum) & 56.1 & 69.2 & 93.6 & +37.5 \\
-MERT Flat Probe (13-layer) & 58.2 & 70.2 & 90.2 & +32.0 \\
-MERT Deep Probe (multi-scale) & 55.5 & 68.5 & 92.2 & +36.7 \\
-MERT Attention Probe & 54.6 & 69.8 & 95.7 & +41.0 \\
-MERT-330M Probe & 56.6 & 70.9 & 96.0 & +39.4 \\
-CNN (log-mel spectrogram) & 55.1 & --- & 69.2 & +14.1 \\
-BYOL-A + DNN \cite{rai2025evaluating} & 57.4 & 69.9 & 84.5 & +27.2 \\
-PANNs CNN14 \cite{liu2022openset} & 57.4 & 67.2 & 73.4 & +16.0 \\
+MERT Probe (weighted-sum) \cite{ref-pasad2021layer} & 56.1 & 69.2 & 93.6 & +37.5 \\
+MERT Flat Probe (13-layer) \cite{ref-li2023mert} & 58.2 & 70.2 & 90.2 & +32.0 \\
+MERT Deep Probe (multi-scale) \cite{ref-yang2021superb} & 55.5 & 68.5 & 92.2 & +36.7 \\
+MERT Attention Probe \cite{ref-safari2020self} & 54.6 & 69.8 & 95.7 & +41.0 \\
+MERT-330M Probe \cite{ref-li2023mert} & 56.6 & 70.9 & 96.0 & +39.4 \\
+CNN (log-mel spectrogram) \cite{ref-choi2017transfer} & 55.1 & --- & 69.2 & +14.1 \\
+BYOL-A + DNN \cite{ref-niizumi2023byola} & 57.4 & 69.9 & 84.5 & +27.2 \\
+PANNs CNN14 \cite{ref-kong2020panns} & 57.4 & 67.2 & 73.4 & +16.0 \\
 \midrule
 \textbf{Mean} & \textbf{56.4} & \textbf{69.4} & \textbf{86.9} & \textbf{+30.5} \\
 \bottomrule
@@ -174,16 +281,16 @@ PANNs CNN14 \cite{liu2022openset} & 57.4 & 67.2 & 73.4 & +16.0 \\
 
 Decomposed over the seven architectures with all three rungs: dropping the artist filter alone accounts for +12.8 pp, and leaking clips on top of that adds a further +20.0 pp. The effect is systematic and architecture-independent, spanning from-scratch CNNs (+14.1 pp) to attention-based MERT probes (+41.0 pp).
 
-The MERT attention probe illustrates the extreme: 54.6% under honest evaluation, 95.7% under clip-random. The attention mechanism excels at acoustic fingerprinting --- recognising *which recording* it has heard --- which is rewarded under clip-random but irrelevant under artist-filtered evaluation.
+The MERT attention probe illustrates the extreme: 54.6\% under honest evaluation, 95.7\% under clip-random. The attention mechanism excels at acoustic fingerprinting --- recognising *which recording* it has heard --- which is rewarded under clip-random but irrelevant under artist-filtered evaluation.
 
-## C. Against Published Literature
+## E. Against Published Literature
 
-Our best artist-filtered model reaches 58.5%. The only published number carrying an artist-filtered guarantee is 54.8% (Park et al.'s re-run of FMA's baseline code [@park2018representation]), a margin of +3.7 pp. We deliberately do not report a "beats N of M" count: ranking against numbers whose protocol is unknown would treat incomparable quantities as comparable, which is the failure this project documents.
+Our best artist-filtered model reaches 58.5\%. The only published number carrying an artist-filtered guarantee is 54.8\% (Park et al.'s re-run of FMA's baseline code [@park2018representation]), a margin of +3.7 pp. We deliberately do not report a "beats N of M" count: ranking against numbers whose protocol is unknown would treat incomparable quantities as comparable, which is the failure this project documents.
 
 For two architectures we reimplemented from published work, the published numbers land between our artist-filtered and random-track results:
 
-- **BYOL-A + DNN** [@rai2025evaluating]: published 64.3%, ours 57.4% (artist-filtered) / 69.9% (random-track)
-- **PANNs CNN14** [@liu2022openset]: published 60.9%, ours 57.4% (artist-filtered) / 67.2% (random-track)
+- **BYOL-A + DNN** [@rai2025evaluating]: published 64.3\%, ours 57.4\% (artist-filtered) / 69.9\% (random-track)
+- **PANNs CNN14** [@liu2022openset]: published 60.9\%, ours 57.4\% (artist-filtered) / 67.2\% (random-track)
 
 This is consistent with several explanations, including protocol differences and probe-head fidelity. The architecture-fidelity confound is as large as the effect, so we do not adjudicate.
 
@@ -194,7 +301,7 @@ This is consistent with several explanations, including protocol differences and
 The finding is not that the field is cheating --- it is that the field has no reporting convention for a variable we measure at tens of points. When a paper does not state its protocol:
 
 1. The number becomes *unplaceable*. Not "probably leaked" --- unplaceable.
-2. It is incomparable in both directions. An undisclosed 64.3% is neither above nor below an artist-filtered 58.5% in any meaningful sense.
+2. It is incomparable in both directions. An undisclosed 64.3\% is neither above nor below an artist-filtered 58.5\% in any meaningful sense.
 3. The honest error bar is the full ladder span, which for most architectures exceeds the entire range of accuracies the literature competes over.
 
 We propose that future FMA-small publications state, at minimum: (a) whether the artist-filtered split was used, (b) whether evaluation is track-level or episode-level, and (c) the exact split mechanism if not FMA's shipped metadata.
@@ -209,6 +316,6 @@ This study covers one dataset (FMA-small), one segmentation length (3 seconds), 
 
 # VII. Conclusion
 
-We measured the cost of three evaluation protocol choices on FMA-small music genre classification across 13 architectures and 52 training runs. The effect is large (+30.5 pp mean inflation), systematic (architecture-independent), and undisclosed (0 of 9 published papers state artist-filtered evaluation). Our best model reaches 58.5% under the artist-filtered, track-level protocol, establishing a placeable reference point for future comparison. The gap is not in the models --- it is in the reporting convention. We call on future work to state its split protocol explicitly, so that published numbers can be placed on a common axis.
+We measured the cost of three evaluation protocol choices on FMA-small music genre classification across 13 architectures and 52 training runs. The effect is large (+30.5 pp mean inflation), systematic (architecture-independent), and undisclosed (0 of 9 published papers state artist-filtered evaluation). Our best model reaches 58.5\% under the artist-filtered, track-level protocol, establishing a placeable reference point for future comparison. The gap is not in the models --- it is in the reporting convention. We call on future work to state its split protocol explicitly, so that published numbers can be placed on a common axis.
 
 # References
