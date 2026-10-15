@@ -13,11 +13,8 @@
 \usepackage{multirow}
 \usepackage{tabularx}
 \usepackage{float}
-
-% Unicode character mappings for citeproc output
-\usepackage{newunicodechar}
-\newunicodechar{—}{---}
-\newunicodechar{–}{--}
+\usepackage[numbers]{natbib}
+\renewcommand{\bibfont}{\footnotesize}
 
 % pandoc tight list fix
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
@@ -31,27 +28,6 @@ $if(graphics)$
 \setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
 $endif$
 
-% citeproc support
-\newcommand{\citeproctext}{}
-
-% CSL refs
-\newlength{\cslhangindent}
-\setlength{\cslhangindent}{1.5em}
-\newlength{\csllabelwidth}
-\setlength{\csllabelwidth}{3em}
-\newenvironment{CSLReferences}[2]
- {\begin{list}{}
-   {\setlength{\itemindent}{0pt}
-    \setlength{\leftmargin}{\cslhangindent}
-    \setlength{\parsep}{0pt}
-    \setlength{\listparindent}{\parindent}
-    \setlength{\itemsep}{0pt}}}
- {\end{list}}
-\newcommand{\CSLBlock}[1]{\hfill\break#1\hfill\break}
-\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{\strut#1\strut}}
-\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{\strut#1\strut}}
-\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
-
 \title{$title$}
 \author{$for(author)$$author$$sep$ \and $endfor$}
 
@@ -63,5 +39,8 @@ $abstract$
 \end{abstract}
 
 $body$
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
 
 \end{document}

@@ -2,14 +2,12 @@
 
 pdf: report.pdf
 
-report.pdf: report.md references.bib ieee-template.tex ieee.csl
+report.pdf: report.md references.bib ieee-template.tex
 	pandoc report.md \
-	  --from markdown \
+	  --from markdown-smart \
 	  --pdf-engine=tectonic \
 	  --template=ieee-template.tex \
-	  --citeproc \
-	  --bibliography=references.bib \
-	  --csl=ieee.csl \
+	  --natbib \
 	  -o report.pdf
 
 clean:
