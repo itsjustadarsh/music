@@ -23,21 +23,34 @@ class MertFlatProbe(nn.Module):
         hidden_size: int = MERT_HIDDEN_SIZE,
         proj_size: int = 512,
         dropout: float = 0.5,
+        hidden_sizes: tuple[int, ...] | None = None,
     ):
         super().__init__()
         flat_dim = num_layers * hidden_size  # 13*768 = 9984
 
         self.norm = nn.LayerNorm(flat_dim)
-        self.encoder = nn.Sequential(
-            nn.Linear(flat_dim, proj_size * 2),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.LayerNorm(proj_size * 2),
-            nn.Linear(proj_size * 2, proj_size),
-            nn.GELU(),
-            nn.Dropout(dropout),
-        )
-        self.classifier = nn.Linear(proj_size, num_classes)
+
+        if hidden_sizes is not None:
+            # Custom architecture: variable-depth MLP
+            layers: list[nn.Module] = []
+            in_dim = flat_dim
+            for sz in hidden_sizes:
+                layers += [nn.Linear(in_dim, sz), nn.GELU(), nn.Dropout(dropout)]
+                in_dim = sz
+            self.encoder = nn.Sequential(*layers)
+            self.classifier = nn.Linear(in_dim, num_classes)
+        else:
+            # Default 2-layer architecture
+            self.encoder = nn.Sequential(
+                nn.Linear(flat_dim, proj_size * 2),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.LayerNorm(proj_size * 2),
+                nn.Linear(proj_size * 2, proj_size),
+                nn.GELU(),
+                nn.Dropout(dropout),
+            )
+            self.classifier = nn.Linear(proj_size, num_classes)
 
         # Compatibility attributes
         self.learn_layer_weights = False

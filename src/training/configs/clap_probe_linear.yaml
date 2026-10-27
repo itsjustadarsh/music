@@ -1,0 +1,16 @@
+batch_size: 128
+dropout: 0.4
+early_stopping_patience: 10
+embed_dim: 512
+embedding_name: clap
+epochs: 50
+hidden_sizes: []
+label_smoothing: 0.1
+lr: 0.0003
+mixup_alpha: 0.3
+model: embedding_probe
+optimizer: adamw
+run_name: clap_probe_linear
+scheduler: cosine
+seed: 42
+weight_decay: 0.001

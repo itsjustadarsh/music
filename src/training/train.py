@@ -165,6 +165,7 @@ def train(cfg: dict) -> Path:
             num_classes=NUM_CLASSES,
             proj_size=cfg.get("proj_size", 512),
             dropout=cfg.get("dropout", 0.5),
+            hidden_sizes=tuple(cfg["hidden_sizes"]) if cfg.get("hidden_sizes") else None,
         )
         train_loader, val_loader, test_loader = build_mert_loaders(cfg)
     elif cfg["model"] == "resnet":
