@@ -50,3 +50,15 @@ study/
 
 # Docs figures generated at eval time (kept out unless explicitly added)
 docs/figures/*.png
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+docs/final-paper/report.tex
+docs/final-paper/texput_debug.tex
+docs/milestone1/texput.tex

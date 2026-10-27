@@ -1,14 +1,18 @@
-.PHONY: pdf clean
+.PHONY: pdf tex clean
 
 pdf: report.pdf
 
-report.pdf: report.md references.bib ieee-template.tex
+tex: report.tex
+
+report.tex: report.md references.bib ieee-template.tex
 	pandoc report.md \
 	  --from markdown-smart \
-	  --pdf-engine=tectonic \
 	  --template=ieee-template.tex \
 	  --natbib \
-	  -o report.pdf
+	  -o report.tex
+
+report.pdf: report.tex references.bib
+	tectonic report.tex
 
 clean:
-	rm -f report.pdf
+	rm -f report.pdf report.tex *.aux *.bbl *.blg *.log

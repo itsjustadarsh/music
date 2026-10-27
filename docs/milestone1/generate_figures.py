@@ -352,11 +352,11 @@ def fig_literature_scatter():
     ax.scatter(years, accs, s=30, color="#d73027", zorder=5, label="Published (protocol unstated)")
 
     # Our result
-    ax.scatter([2026], [58.5], s=60, color="#2166ac", marker="*", zorder=6,
+    ax.scatter([2026], [59.9], s=60, color="#2166ac", marker="*", zorder=6,
               label="Ours (artist-filtered)")
 
     # Reference line: our best
-    ax.axhline(58.5, color="#2166ac", linestyle="--", alpha=0.5, linewidth=0.8)
+    ax.axhline(59.9, color="#2166ac", linestyle="--", alpha=0.5, linewidth=0.8)
 
     # Annotate a few
     offsets = {
