@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import yaml
 from sklearn.metrics import f1_score
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from src.config import DATA_DIR, OUTPUT_DIR, PROCESSED_DIR
 from src.models.cnn import GenreCNN
@@ -322,6 +322,20 @@ def train(cfg: dict) -> Path:
         train_loader, val_loader, test_loader = loaders
     else:
         raise ValueError(f"Unknown model type: {cfg['model']}")
+
+    # Optional training set subsampling for data efficiency experiments
+    train_fraction = cfg.get("train_fraction", 1.0)
+    if train_fraction < 1.0:
+        import numpy as np
+        n_total = len(train_loader.dataset)
+        n_keep = max(1, int(n_total * train_fraction))
+        rng = np.random.RandomState(cfg.get("seed", 42))
+        indices = rng.permutation(n_total)[:n_keep]
+        subset = Subset(train_loader.dataset, indices.tolist())
+        train_loader = DataLoader(subset, batch_size=train_loader.batch_size,
+                                  shuffle=True, num_workers=0)
+        log.info("Subsampled training set: %d/%d episodes (%.0f%%)",
+                 n_keep, n_total, train_fraction * 100)
 
     model.to(device)
     from src.training.losses import build_criterion

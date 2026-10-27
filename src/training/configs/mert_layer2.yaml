@@ -1,0 +1,14 @@
+model: mert_probe
+epochs: 40
+batch_size: 256
+lr: 0.001
+weight_decay: 1.0e-05
+optimizer: adamw
+scheduler: cosine
+proj_size: 512
+dropout: 0.3
+learn_layer_weights: false
+seed: 42
+early_stopping_patience: 8
+run_name: mert_layer2
+layer_index: 2

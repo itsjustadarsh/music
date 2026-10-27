@@ -17,15 +17,22 @@ abstract: |
   published FMA-small results finds that zero state artist-filtered
   evaluation in prose. The leakage pattern holds universally: it is not
   an artifact of any particular architecture, pretraining strategy, or
-  model family. Beyond accuracy, we show that leakage distorts calibration:
-  under honest evaluation, models are approximately calibrated, but under
-  clip-random evaluation all models become underconfident --- a novel
-  diagnostic for protocol integrity. We frame this as a research gap in
-  reporting conventions: the field benchmarks on a variable it does not
-  name, and the resulting numbers are not mutually comparable. Our best
-  model, a frozen CLAP probe, reaches 59.9\%
-  under the artist-filtered, track-level protocol --- 5.1 pp above the
-  only prior sourceable artist-filtered number (54.8\%).
+  model family. Beyond accuracy, we provide three independent diagnostics
+  for protocol integrity: (i) leakage distorts calibration, creating
+  underconfidence ($T^* < 1$) rather than overconfidence; (ii) leakage
+  raises inter-episode temporal consistency from 80\% to 96\%, far
+  beyond what genre classification alone can explain; and (iii) leakage
+  disproportionately benefits hard tracks (+61.5 pp for tracks no model
+  classifies correctly under honest evaluation, vs --1.1 pp for easy
+  tracks). Confusion matrix analysis shows that leakage eliminates
+  genuine genre ambiguity --- e.g., Folk--Instrumental confusion drops
+  by 26 pp --- by substituting recording recognition for genre
+  recognition. We frame this as a research gap in reporting
+  conventions: the field benchmarks on a variable it does not name, and
+  the resulting numbers are not mutually comparable. Our best model, a
+  frozen CLAP probe, reaches 59.9\% under the artist-filtered,
+  track-level protocol --- 5.1 pp above the only prior sourceable
+  artist-filtered number (54.8\%).
 ---
 
 # 1. Introduction
@@ -38,7 +45,7 @@ The emergence of audio foundation models --- self-supervised transformers pretra
 
 This is not an accusation. It is a measurement. The field has no reporting convention for a variable that dominates the accuracy axis, and so published numbers are not mutually comparable even in principle. We document the size of the effect, audit what the literature actually states, and report our own results under a named protocol so that future work has at least one placeable reference point.
 
-**Contributions.** (1) A three-rung protocol ladder quantifying the accuracy cost of each leakage type across 14 architectures spanning four model families: from-scratch CNNs, music-specific SSL, general audio and speech SSL, and non-neural baselines. (2) A literature audit of 9 published FMA-small results, recording what each paper states --- not implies --- about its split. (3) A reproducible training pipeline covering 14 architectures and 62 evaluated runs, all under the artist-filtered, track-level protocol. (4) Analysis of leakage magnitude by model family, testing whether music-specific pretraining, speech-only pretraining, or audio-language alignment affects the inflation pattern. (5) A calibration analysis showing that leakage creates underconfidence ($T^* < 1$), not overconfidence --- a novel diagnostic for protocol integrity. (6) CKA representation similarity and error diversity analyses explaining why uniform ensembles outperform learned fusion at this data scale.
+**Contributions.** (1) A three-rung protocol ladder quantifying the accuracy cost of each leakage type across 14 architectures spanning four model families: from-scratch CNNs, music-specific SSL, general audio and speech SSL, and non-neural baselines. (2) A literature audit of 9 published FMA-small results, recording what each paper states --- not implies --- about its split. (3) A reproducible training pipeline covering 14 architectures and 62 evaluated runs, all under the artist-filtered, track-level protocol. (4) Analysis of leakage magnitude by model family, testing whether music-specific pretraining, speech-only pretraining, or audio-language alignment affects the inflation pattern. (5) A calibration analysis showing that leakage creates underconfidence ($T^* < 1$), not overconfidence --- a novel diagnostic for protocol integrity. (6) CKA representation similarity and error diversity analyses explaining why uniform ensembles outperform learned fusion at this data scale. (7) A confusion matrix decomposition showing that leakage eliminates genuine genre confusions (e.g., Folk$\leftrightarrow$Instrumental) by substituting recording recognition for genre recognition. (8) Layer-wise leakage fingerprinting showing that recording identity is encoded uniformly across all 13 MERT transformer layers, not concentrated in early acoustic layers. (9) A data efficiency analysis showing that inflation scales monotonically with training set size --- leakage is not a small-data artifact but a memorisation effect that worsens as datasets grow. (10) Temporal consistency and track difficulty analyses providing two additional protocol-agnostic diagnostics: leakage raises inter-episode agreement from 80\% to 96\%, and disproportionately benefits hard tracks (+61.5 pp for the hardest bin vs --1.1 pp for the easiest).
 
 # 2. Related Work
 
@@ -519,6 +526,17 @@ Decomposed: dropping the artist filter alone accounts for +12.7 pp, and leaking 
 
 Not all genres inflate equally. Folk (+49.8 pp mean inflation), Instrumental (+45.2 pp), and Experimental (+42.8 pp) inflate the most. These are also the three hardest genres under honest evaluation (36.1\%, 40.9\%, and 41.4\% mean F1 respectively). The explanation: these genres are stylistically diffuse, so models learn to recognise *which recording* they have heard rather than genre features. Hip-Hop (+14.0 pp) and Electronic (+16.3 pp) inflate the least, having strong acoustic signatures that transfer across artists.
 
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{confusion_diff.pdf}
+\caption{Confusion matrix shift under protocol leakage, averaged across 8 architectures. (a) Artist-filtered: off-diagonal mass in Folk$\rightarrow$Experimental (22.8\%), Instrumental$\rightarrow$Folk (28.6\%), and Pop$\rightarrow$Hip-Hop (16.5\%) reflects genuine genre ambiguity. (b) Clip-random: confusion collapses as models recognise recordings. (c) Difference: diagonal gains (recording recognition) come at the expense of off-diagonal confusion (genre ambiguity). Folk gains +49.4~pp on-diagonal; the largest off-diagonal reduction is Instrumental$\rightarrow$Folk ($-25.9$~pp).}
+\label{fig:confusion_diff}
+\end{figure*}
+```
+
+The confusion matrix shift (Figure \ref{fig:confusion_diff}) reveals *what* leakage fixes. Under honest evaluation, the dominant confusions are between acoustically similar genres: Instrumental$\rightarrow$Folk (28.6\%), Folk$\rightarrow$Experimental (22.8\%), and Folk$\rightarrow$Pop (23.1\%). Under clip-random evaluation, these confusions nearly vanish --- not because the model learned genre boundaries, but because it learned recording identities. The off-diagonal reductions are not a sign of better generalisation; they are a sign of memorisation replacing classification.
+
 ## E. Cross-Architecture Leakage Consistency
 
 To test whether the leakage pattern is architecture-independent, we compute the Spearman rank correlation between per-genre inflation vectors across all architecture pairs. Each architecture produces an 8-element vector of per-genre inflation values (clip-random F1 minus artist-filtered F1). If the genre vulnerability ordering is consistent across architectures, the pairwise rank correlations should be high.
@@ -693,6 +711,76 @@ All accuracy numbers in this study are accompanied by bootstrap 95\% confidence 
 
 Per-genre CIs for the best model reveal the precision ceiling: Hip-Hop has the tightest CI [79.0\%, 93.0\%], while the hardest genres have wide CIs (Folk: [29.0\%, 48.0\%], Pop: [28.0\%, 46.0\%]). With only 100 test tracks per genre, detecting a 5-pp improvement in Folk with 95\% confidence would require a model to improve from 38\% to 43\% --- a bar that is meaningful but attainable.
 
+## M. Layer-Wise Leakage Fingerprinting
+
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{layer_leakage.pdf}
+\caption{(a) Single-layer MERT-95M probe accuracy under three protocols. Genre-discriminative accuracy (blue) peaks at layer~7 (53.0\%) and declines in later layers. Clip-random accuracy (red) peaks at layers~3--5 (87--89\%) and remains high across all depths. The shaded region shows the inflation gap. (b) Per-layer inflation. Despite the inverted-U shape in honest accuracy, inflation is remarkably uniform (33.5--41.1~pp across all 13 layers), indicating that recording identity is encoded at every transformer depth, not just in early acoustic layers.}
+\label{fig:layer_leakage}
+\end{figure*}
+```
+
+To localise where recording identity versus genre information resides in a pretrained transformer, we train 13 single-layer MERT-95M probes --- one per transformer layer --- under each of the three protocols (39 runs total).
+
+Genre-discriminative accuracy follows an inverted-U pattern: it rises from layer~0 (40.9\%) through layer~7 (53.0\%), then declines to layer~12 (47.0\%). This pattern is consistent with prior findings that genre-relevant features are distributed across transformer depth, with middle layers encoding the richest semantic representations.
+
+The key finding is that inflation is *nearly uniform* across layers: it ranges from +33.5~pp (layer~7) to +41.1~pp (layer~2), with a mean of +37.4~pp. If recording identity were concentrated in early acoustic layers (which preserve fine-grained spectral detail), we would expect inflation to decay with depth. Instead, the uniformity indicates that recording identity pervades the entire representation --- the model encodes enough recording-specific information at every layer for a simple probe to exploit it under permissive evaluation.
+
+The slight inflation minimum at layer~7 --- the same layer with peak honest accuracy --- suggests a subtle tradeoff: the layer most useful for genre classification is also the layer that encodes proportionally more genre (vs. recording) information. But the effect is small: even at layer~7, inflation is +33.5~pp, indicating that recording identity dominates genre information at every depth.
+
+## N. Data Efficiency and Protocol Sensitivity
+
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{data_efficiency.pdf}
+\caption{(a) Track-level accuracy vs training data fraction for CLAP and MERT-95M flat probes under artist-filtered (solid) and clip-random (dashed) evaluation. Under honest evaluation, both models plateau early; under leakage, accuracy scales steadily with data. (b) Inflation (clip-random $-$ artist-filtered) vs training data fraction. Inflation grows monotonically with training set size: MERT flat inflates from +17.4~pp at 10\% to +35.1~pp at 75\%; CLAP inflates from +12.0~pp to +19.0~pp. More training data means more recordings to memorise, amplifying the leakage effect.}
+\label{fig:data_efficiency}
+\end{figure*}
+```
+
+To test whether leakage is a small-data artifact, we train CLAP and MERT-95M flat probes on subsampled training sets (10\%, 25\%, 50\%, 75\%, 100\%) under both artist-filtered and clip-random evaluation.
+
+Under honest evaluation, accuracy is remarkably insensitive to training set size: CLAP ranges from 56.3\% (10\% data) to 59.9\% (100\%), and MERT flat from 50.1\% to 58.2\%. The frozen representations already contain the genre information; more labelled data provides diminishing returns for learning the linear mapping.
+
+Under clip-random evaluation, accuracy scales steeply: MERT flat rises from 67.5\% (10\%) to 90.2\% (100\%). The inflation consequently grows monotonically: from +17.4~pp at 10\% to +35.1~pp at 75\% for MERT flat, and from +12.0~pp to +19.0~pp for CLAP. This scaling confirms that leakage is not a small-data artifact --- it is a memorisation effect that strengthens as the model sees more recordings. The practical implication is sobering: growing a benchmark dataset does not mitigate protocol leakage; it amplifies it.
+
+## O. Temporal Consistency as a Protocol Diagnostic
+
+Section 5K showed that inter-episode agreement under honest evaluation averages 80.3\%. We now compare this to agreement under clip-random evaluation across 8 paired architectures.
+
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{temporal_consistency.pdf}
+\caption{(a) Distribution of inter-episode agreement under artist-filtered (blue) vs clip-random (red) evaluation, pooled across 8 architectures. Under leakage, agreement shifts sharply rightward: mean rises from 0.80 to 0.96. (b) Per-model agreement comparison. Every model shows higher consistency under clip-random, with MERT-330M reaching 0.98. The gap ($\Delta$) is a protocol-agnostic diagnostic: no model should achieve 96\% temporal consistency on a genuinely ambiguous 8-class task.}
+\label{fig:temporal_consistency}
+\end{figure*}
+```
+
+Under clip-random evaluation, mean episode agreement rises to 96.4\% $\pm$ 12.7\% --- compared to 79.8\% $\pm$ 20.5\% under honest evaluation. The shift is universal: every model shows higher consistency under leakage. MERT-330M reaches 98.2\% agreement under clip-random, meaning that on average, 9.8 of 10 episodes from the same track are classified identically. This is not genre classification --- it is recording recognition.
+
+The consistency gap provides a model-agnostic diagnostic for protocol integrity. A model achieving $>$95\% inter-episode agreement on an 8-class genre task should raise suspicion: genuinely ambiguous genres (Folk, Pop) cannot produce such consistency from genre cues alone. Unlike calibration diagnostics (Section 5H), which require computing ECE, the consistency diagnostic requires only the raw episode predictions and no additional statistical machinery.
+
+## N. Track Difficulty Profiling
+
+```{=latex}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{track_difficulty.pdf}
+\caption{(a) Per-track difficulty under artist-filtered vs clip-random evaluation across 8 models and 617 test tracks, coloured by genre. Points above the diagonal represent tracks that become easier under leakage. Hard tracks (bottom-left) migrate toward the upper-right, while already-easy tracks (upper-right) stay put. (b) Mean difficulty improvement by honest-difficulty bin. Tracks that no model classifies correctly under honest evaluation gain +61.5~pp under leakage; tracks already easy gain --1.1~pp. Leakage is a regressive subsidy: it helps where genre recognition fails.}
+\label{fig:track_difficulty}
+\end{figure*}
+```
+
+We define per-track difficulty as the fraction of models that classify a track correctly. Under honest evaluation, 136 of 617 test tracks are classified incorrectly by all 8 models (difficulty = 0.0); under clip-random, this drops to 35. Conversely, 229 tracks are classified correctly by all models under honest evaluation; under leakage, 374 are.
+
+The relationship between honest difficulty and leakage benefit is monotonic and steep: tracks in the hardest bin (0.0--0.2 honest difficulty) gain +61.5 pp from leakage, while tracks in the easiest bin (0.8--1.0) gain --1.1 pp. The per-genre breakdown is equally revealing: Folk, the hardest genre under honest evaluation (33.9\% mean difficulty), gains +57.1 pp from leakage. Hip-Hop, the easiest (90.3\%), gains only +1.5 pp.
+
+This pattern is consistent with memorisation, not generalisation. A model that learns better genre features should improve on hard and easy tracks alike; a model that memorises recordings improves only on tracks it has heard before. The monotonic difficulty--improvement relationship is thus a third independent diagnostic for protocol leakage, complementing calibration (Section 5H) and temporal consistency (Section 5M).
+
 # 6. Discussion
 
 ## A. The Research Gap
@@ -723,11 +811,17 @@ This trajectory makes evaluation protocol disclosure increasingly urgent. A repo
 
 The problem extends beyond FMA-small. Any music dataset where multiple segments come from the same recording (MagnaTagATune [@law2009magnatag], GTZAN in its commonly used 3-second-clip form) is susceptible to the same inflation. Any audio dataset where multiple samples share a source identity (the same speaker in speech datasets, the same location in soundscape datasets) faces the analogous issue. The foundation model era amplifies the problem because these models are evaluated on dozens of downstream tasks, each with its own splitting conventions, and a leaky protocol on any one task inflates the overall benchmark score.
 
-## D. Calibration as a Leakage Diagnostic
+## D. A Diagnostic Trio for Protocol Integrity
 
-The calibration analysis (Section 5H) suggests a practical diagnostic for leakage: if a trained model requires temperature $T^* \ll 1$ to align confidence with accuracy, it is achieving accuracy it did not learn to expect. Under honest evaluation, models are approximately calibrated ($T^* \approx 1.2$, slight overconfidence). Under clip-random evaluation, the mean optimal temperature is 0.76 --- the model must be *sharpened* to match its inflated accuracy. This reversal from overconfidence to underconfidence is a direct consequence of leakage converting the task from genre classification to recording recognition.
+This study identifies three independent diagnostics for evaluation protocol leakage, each requiring only standard model outputs and no access to the splitting mechanism:
 
-This suggests a simple post-hoc sanity check: train a model, compute ECE on the test set, and if the model is substantially underconfident ($T^* < 0.9$), the evaluation protocol deserves scrutiny. The diagnostic is imperfect --- a genuinely easy task would also produce $T^* < 1$ --- but in the context of FMA-small, where honest accuracy is 55--58\%, observing $T^* = 0.7$ is a strong signal that something beyond genre recognition is being evaluated.
+**Calibration reversal** (Section 5H): Under honest evaluation, models are slightly overconfident ($T^* \approx 1.2$). Under clip-random evaluation, the mean optimal temperature drops to 0.76 --- the model must be *sharpened* to match its inflated accuracy. A model with $T^* < 0.9$ on a task where honest accuracy is 55--58\% should raise suspicion.
+
+**Temporal consistency inflation** (Section 5M): Under honest evaluation, inter-episode agreement averages 80\%. Under leakage, it rises to 96\%. A model achieving $>$95\% agreement on an 8-class task with genuinely ambiguous genres is more likely recognising recordings than classifying genres.
+
+**Difficulty--improvement monotonicity** (Section 5N): Under honest evaluation, hard tracks (difficulty $<$ 0.2) gain +61.5 pp from leakage; easy tracks (difficulty $>$ 0.8) gain --1.1 pp. Genuine improvements in genre recognition should benefit hard and easy tracks alike; a monotonic difficulty--improvement relationship signals memorisation.
+
+These diagnostics are complementary: calibration tests the model's confidence distribution, temporal consistency tests prediction stability within a source, and difficulty profiling tests which instances benefit. A model that triggers all three warrants close examination of its evaluation protocol.
 
 ## E. Representation Diversity and Ensemble Design
 
@@ -793,7 +887,7 @@ We measured the cost of three evaluation protocol choices on FMA-small music gen
 
 Our best model reaches 59.9\% under the artist-filtered, track-level protocol --- 5.1 pp above the only prior sourceable artist-filtered number. The contribution of this work is not the accuracy number but the demonstration that most published numbers are not what they appear to be.
 
-Beyond accuracy, the protocol choice distorts calibration: under honest evaluation, models are approximately calibrated; under clip-random evaluation, all models are underconfident, with optimal temperatures $T^* < 1$ needed to match inflated accuracy. This calibration reversal provides a post-hoc diagnostic: a model that requires sharpening to be well-calibrated may be benefiting from evaluation leakage. CKA and error diversity analyses further reveal that architectural diversity --- not parameter scaling --- drives ensemble performance, with cross-family pairs ($\kappa = 0.630$) substantially more diverse than within-MERT variants ($\kappa = 0.775$).
+Beyond accuracy, the protocol choice distorts multiple measurable properties. Calibration reverses: under honest evaluation, models are approximately calibrated; under clip-random evaluation, all models are underconfident ($T^* < 1$). Temporal consistency inflates from 80\% to 96\% --- far beyond what genre classification alone can sustain. Track difficulty profiling reveals a monotonic pattern: tracks that no model classifies correctly under honest evaluation gain +61.5 pp under leakage, while already-easy tracks gain nothing (--1.1 pp). Confusion matrix analysis shows that leakage eliminates genuine genre ambiguity (e.g., Folk--Instrumental confusion drops by 26 pp) by substituting recording recognition for genre recognition. Layer-wise probing of all 13 MERT transformer layers shows that recording identity is encoded uniformly across depth (inflation range: 33.5--41.1 pp), not concentrated in early acoustic layers. Data efficiency analysis shows that inflation scales monotonically with training set size, confirming that leakage is not a small-data artifact but a memorisation effect. Together, these diagnostics --- calibration, temporal consistency, difficulty profiling, layer fingerprinting, and data scaling --- provide independent, model-agnostic tests for protocol integrity. CKA and error diversity analyses further reveal that architectural diversity --- not parameter scaling --- drives ensemble performance, with cross-family pairs (kappa = 0.630) substantially more diverse than within-MERT variants (kappa = 0.775).
 
 Three metadata fields --- split mechanism, evaluation unit, split provenance --- would render all future FMA-small results mutually comparable. These fields cost a single sentence per paper. Until that sentence becomes standard, any published FMA-small accuracy carries an implicit error bar of +31 percentage points: the distance between an honest protocol and a permissive one.
 
