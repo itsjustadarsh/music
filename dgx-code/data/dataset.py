@@ -13,7 +13,6 @@ import ast
 import os
 from pathlib import Path
 
-import librosa
 import numpy as np
 import pandas as pd
 import torch
@@ -36,6 +35,10 @@ NUM_CLASSES = len(FMA_GENRES)
 
 def load_fma_metadata() -> pd.DataFrame:
     """Load FMA metadata and return a DataFrame with track_id, genre, split."""
+    from data import memory_cache
+    if memory_cache.is_loaded():
+        return memory_cache.METADATA.copy()
+
     tracks_path = METADATA_DIR / "tracks.csv"
     tracks = pd.read_csv(tracks_path, index_col=0, header=[0, 1])
 
@@ -62,6 +65,28 @@ def load_fma_metadata() -> pd.DataFrame:
     df = df.dropna(subset=["split"])
 
     return df.reset_index(drop=True)
+
+
+def load_waveform(track_id: int, target_sr: int) -> torch.Tensor:
+    """Mono waveform at target_sr. Uses the in-memory cache when loaded, else reads the MP3."""
+    from data import memory_cache
+    if memory_cache.is_loaded() and target_sr in memory_cache.AUDIO:
+        return torch.from_numpy(memory_cache.AUDIO[target_sr][memory_cache.ROW_OF[track_id]])
+
+    audio_path = track_id_to_path(track_id)
+    try:
+        waveform, sr = torchaudio.load(str(audio_path))
+    except Exception:
+        import librosa
+        wav, sr = librosa.load(str(audio_path), sr=target_sr, mono=True)
+        waveform = torch.from_numpy(wav).unsqueeze(0)
+        sr = target_sr
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    waveform = waveform.squeeze(0)
+    if sr != target_sr:
+        waveform = torchaudio.functional.resample(waveform, sr, target_sr)
+    return waveform
 
 
 def track_id_to_path(track_id: int) -> Path:
@@ -101,24 +126,7 @@ class FMAFullTrackDataset(Dataset):
         genre = row["genre"]
         label = GENRE_TO_IDX[genre]
 
-        audio_path = track_id_to_path(track_id)
-
-        try:
-            waveform, sr = torchaudio.load(str(audio_path))
-        except Exception:
-            # Fallback to librosa for problematic mp3s
-            wav, sr = librosa.load(str(audio_path), sr=self.target_sr, mono=True)
-            waveform = torch.from_numpy(wav).unsqueeze(0)
-            sr = self.target_sr
-
-        # Convert to mono
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        waveform = waveform.squeeze(0)
-
-        # Resample if needed
-        if sr != self.target_sr:
-            waveform = torchaudio.functional.resample(waveform, sr, self.target_sr)
+        waveform = load_waveform(track_id, self.target_sr)
 
         # Pad or truncate to max_samples
         if waveform.shape[0] < self.max_samples:
@@ -190,20 +198,7 @@ class FMAEpisodeDataset(Dataset):
         track_id = int(row["track_id"])
         label = GENRE_TO_IDX[row["genre"]]
 
-        audio_path = track_id_to_path(track_id)
-        try:
-            waveform, sr = torchaudio.load(str(audio_path))
-        except Exception:
-            wav, sr = librosa.load(str(audio_path), sr=self.target_sr, mono=True)
-            waveform = torch.from_numpy(wav).unsqueeze(0)
-            sr = self.target_sr
-
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        waveform = waveform.squeeze(0)
-
-        if sr != self.target_sr:
-            waveform = torchaudio.functional.resample(waveform, sr, self.target_sr)
+        waveform = load_waveform(track_id, self.target_sr)
 
         # Extract the episode
         start = ep_idx * self.episode_samples

@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from sklearn.metrics import confusion_matrix, f1_score, precision_recall_fscore_support
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 from torch.utils.data import DataLoader
 
 from data.dataset import FMA_GENRES, IDX_TO_GENRE, NUM_CLASSES
@@ -114,8 +114,9 @@ def evaluate(run_dir: Path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = build_model_from_config(cfg)
-    state = torch.load(run_dir / "best.pt", map_location=device)
-    model.load_state_dict(state)
+    # trainable_weights.pt holds only fine-tuned params; frozen ones come from the pretrained checkpoint
+    state = torch.load(run_dir / "trainable_weights.pt", map_location=device)
+    model.load_state_dict(state, strict=False)
     model.to(device).eval()
 
     loader = build_test_loader(cfg)
@@ -125,9 +126,9 @@ def evaluate(run_dir: Path):
     with torch.no_grad():
         for waveforms, labels, track_ids in loader:
             waveforms = waveforms.to(device)
-            with autocast(device_type="cuda", enabled=use_amp):
+            with autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
                 logits = model(waveforms)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()
+            probs = torch.softmax(logits.float(), dim=1).cpu().numpy()
             all_probs.extend(probs)
             all_labels.extend(labels.tolist())
             all_track_ids.extend(track_ids.tolist())

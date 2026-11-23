@@ -39,7 +39,10 @@ def load_mert_backbone(checkpoint: str, gradient_checkpointing: bool = True):
     model = HubertModel.from_pretrained(checkpoint, config=config)
 
     if gradient_checkpointing:
-        model.gradient_checkpointing_enable()
+        # Non-reentrant checkpointing: the frozen conv front-end yields inputs without
+        # requires_grad, which with reentrant checkpointing silently blocks gradients
+        # to LoRA / unfrozen layers.
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     extractor = Wav2Vec2FeatureExtractor.from_pretrained(
         checkpoint, trust_remote_code=True
@@ -143,7 +146,17 @@ class MertFinetune(nn.Module):
                 bias="none",
                 modules_to_save=[],
             )
+            # PEFT tries enable_input_require_grads() when checkpointing is on, which
+            # HubertModel doesn't support. Wrap first, then re-enable non-reentrant
+            # checkpointing (which doesn't need input grads).
+            gc_on = self.backbone.is_gradient_checkpointing
+            if gc_on:
+                self.backbone.gradient_checkpointing_disable()
             self.backbone = get_peft_model(self.backbone, lora_config)
+            if gc_on:
+                self.backbone.base_model.model.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
             log.info(
                 "LoRA applied: %d trainable params",
                 sum(p.numel() for p in self.backbone.parameters() if p.requires_grad),

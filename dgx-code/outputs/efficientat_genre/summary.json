@@ -1,0 +1,39 @@
+{
+  "run_name": "efficientat_genre",
+  "model": "efficientat",
+  "best_epoch": 41,
+  "best_val_macro_f1": 0.5960213076411047,
+  "test": {
+    "episode_accuracy": 0.5304166666666666,
+    "episode_macro_f1": 0.5236861969992834,
+    "track_accuracy": 0.55375,
+    "track_macro_f1": 0.546352333216112,
+    "n_episodes": 2400,
+    "n_tracks": 800
+  },
+  "config": {
+    "run_name": "efficientat_genre",
+    "model": "efficientat",
+    "num_classes": 8,
+    "target_sr": 32000,
+    "max_duration_sec": 10.0,
+    "dataset_type": "episode",
+    "episode_sec": 10.0,
+    "batch_size": 64,
+    "num_workers": 4,
+    "epochs": 60,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "scheduler": "cosine_warmup",
+    "warmup_steps": 300,
+    "grad_accum_steps": 1,
+    "max_grad_norm": 1.0,
+    "dropout": 0.3,
+    "label_smoothing": 0.1,
+    "mixup_alpha": 0.3,
+    "seed": 42,
+    "early_stopping_patience": 15,
+    "use_amp": true,
+    "_out_root": "outputs"
+  }
+}

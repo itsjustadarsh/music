@@ -28,12 +28,18 @@ import torch.distributed as dist
 import torch.nn as nn
 import yaml
 from sklearn.metrics import f1_score
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
+
+# bf16 autocast (Hopper-native, no loss scaling needed, avoids fp16 overflow in MERT)
+AMP_DTYPE = torch.bfloat16
+
+# Only save trainable weights to disk if they are smaller than this (disk is tight)
+MAX_SAVE_MB = 50
 
 
 def is_distributed() -> bool:
@@ -155,6 +161,9 @@ def build_loaders(cfg: dict):
 
     bs = cfg["batch_size"]
     num_workers = cfg.get("num_workers", 4)
+    from data import memory_cache
+    if memory_cache.is_loaded():
+        num_workers = 0  # audio already decoded in RAM; slicing is cheap
 
     if is_distributed():
         train_sampler = DistributedSampler(train_ds, shuffle=True)
@@ -260,12 +269,13 @@ def run_epoch(
     criterion: nn.Module,
     optimizer,
     device: torch.device,
-    scaler: GradScaler | None,
+    scaler,
     train: bool,
     scheduler=None,
     grad_accum_steps: int = 1,
     mixup_alpha: float = 0.0,
     max_grad_norm: float = 1.0,
+    use_amp: bool = True,
 ):
     model.train(mode=train)
     total_loss = 0.0
@@ -284,7 +294,7 @@ def run_epoch(
             waveforms = lam * waveforms + (1 - lam) * waveforms[index]
 
         with torch.set_grad_enabled(train):
-            with autocast(device_type="cuda", enabled=scaler is not None):
+            with autocast(device_type="cuda", dtype=AMP_DTYPE, enabled=use_amp):
                 logits = model(waveforms)
 
                 if train and mixup_alpha > 0:
@@ -369,9 +379,9 @@ def evaluate_track_level(
     with torch.no_grad():
         for waveforms, labels, track_ids in loader:
             waveforms = waveforms.to(device)
-            with autocast(device_type="cuda", enabled=use_amp):
+            with autocast(device_type="cuda", dtype=AMP_DTYPE, enabled=use_amp):
                 logits = model(waveforms)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()
+            probs = torch.softmax(logits.float(), dim=1).cpu().numpy()
             all_probs.extend(probs)
             all_labels.extend(labels.tolist())
             all_track_ids.extend(track_ids.tolist())
@@ -387,6 +397,9 @@ def evaluate_track_level(
     track_f1 = f1_score(track_labels, track_preds, average="macro", zero_division=0)
 
     return {
+        "probs": np.stack(all_probs),
+        "labels": np.array(all_labels),
+        "track_ids": np.array(all_track_ids),
         "episode_accuracy": episode_acc,
         "episode_macro_f1": episode_f1,
         "track_accuracy": track_acc,
@@ -409,7 +422,7 @@ def train(cfg: dict, resume_path: str | None = None):
         torch.cuda.manual_seed_all(cfg.get("seed", 42))
 
     # Output directory
-    run_dir = Path("outputs") / cfg["run_name"]
+    run_dir = Path(cfg.get("_out_root", "outputs")) / cfg["run_name"]
     if is_main_process():
         run_dir.mkdir(parents=True, exist_ok=True)
         with open(run_dir / "config.json", "w") as f:
@@ -443,7 +456,7 @@ def train(cfg: dict, resume_path: str | None = None):
 
     # Mixed precision
     use_amp = cfg.get("use_amp", True) and torch.cuda.is_available()
-    scaler = GradScaler() if use_amp else None
+    scaler = None  # bf16 autocast does not need a GradScaler
 
     # Resume from checkpoint
     start_epoch = 1
@@ -474,6 +487,7 @@ def train(cfg: dict, resume_path: str | None = None):
     mixup_alpha = cfg.get("mixup_alpha", 0.0)
     max_grad_norm = cfg.get("max_grad_norm", 1.0)
     best_epoch = start_epoch - 1
+    best_state = None
 
     for epoch in range(start_epoch, cfg["epochs"] + 1):
         if train_sampler is not None:
@@ -484,11 +498,11 @@ def train(cfg: dict, resume_path: str | None = None):
         train_loss, train_acc, train_f1 = run_epoch(
             model, train_loader, criterion, optimizer, device, scaler,
             train=True, scheduler=scheduler, grad_accum_steps=grad_accum,
-            mixup_alpha=mixup_alpha, max_grad_norm=max_grad_norm,
+            mixup_alpha=mixup_alpha, max_grad_norm=max_grad_norm, use_amp=use_amp,
         )
         val_loss, val_acc, val_f1 = run_epoch(
             model, val_loader, criterion, optimizer, device, scaler,
-            train=False,
+            train=False, use_amp=use_amp,
         )
         elapsed = time.time() - t0
 
@@ -505,22 +519,12 @@ def train(cfg: dict, resume_path: str | None = None):
                     val_loss, val_acc, val_f1, current_lr, elapsed,
                 ])
 
-            # Save last checkpoint (for resume)
-            ckpt = {
-                "epoch": epoch,
-                "model_state_dict": base_model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "best_val_f1": best_val_f1,
-            }
-            if scaler:
-                ckpt["scaler_state_dict"] = scaler.state_dict()
-            torch.save(ckpt, run_dir / "last.pt")
-
+            # No per-epoch checkpoints on disk: keep the best weights in CPU RAM.
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 best_epoch = epoch
                 epochs_since_improvement = 0
-                torch.save(base_model.state_dict(), run_dir / "best.pt")
+                best_state = {k: v.detach().to("cpu", copy=True) for k, v in base_model.state_dict().items()}
                 log.info("  New best val F1: %.4f (epoch %d)", best_val_f1, epoch)
             else:
                 epochs_since_improvement += 1
@@ -532,9 +536,10 @@ def train(cfg: dict, resume_path: str | None = None):
     # Final evaluation on test set
     if is_main_process():
         log.info("Loading best checkpoint (epoch %d) for test evaluation...", best_epoch)
-        base_model.load_state_dict(torch.load(run_dir / "best.pt", map_location=device))
+        base_model.load_state_dict(best_state)
 
         test_metrics = evaluate_track_level(base_model, test_loader, device, use_amp)
+        save_run_outputs(run_dir, base_model, test_metrics)
 
         log.info(
             "TEST  episode_acc=%.4f episode_f1=%.4f  track_acc=%.4f track_f1=%.4f  (%d episodes, %d tracks)",
@@ -548,22 +553,21 @@ def train(cfg: dict, resume_path: str | None = None):
             "model": cfg["model"],
             "best_epoch": best_epoch,
             "best_val_macro_f1": best_val_f1,
-            "test": test_metrics,
+            "test": {k: v for k, v in test_metrics.items() if not isinstance(v, np.ndarray)},
             "config": cfg,
         }
         with open(run_dir / "summary.json", "w") as f:
             json.dump(summary, f, indent=2)
 
+        from evaluate import aggregate_to_tracks, compute_metrics
+        probs, labels, tids = test_metrics["probs"], test_metrics["labels"].tolist(), test_metrics["track_ids"].tolist()
+        track_labels, track_preds = aggregate_to_tracks(probs, labels, tids)
         eval_metrics = {
             "run_name": cfg["run_name"],
-            "clip_level": {
-                "accuracy": test_metrics["episode_accuracy"],
-                "macro_f1": test_metrics["episode_macro_f1"],
-            },
-            "track_level": {
-                "accuracy": test_metrics["track_accuracy"],
-                "macro_f1": test_metrics["track_macro_f1"],
-            },
+            "best_epoch": best_epoch,
+            "best_val_macro_f1": best_val_f1,
+            "clip_level": compute_metrics(labels, probs.argmax(1).tolist()),
+            "track_level": compute_metrics(track_labels, track_preds),
             "n_clips": test_metrics["n_episodes"],
             "n_tracks": test_metrics["n_tracks"],
         }
@@ -571,6 +575,29 @@ def train(cfg: dict, resume_path: str | None = None):
             json.dump(eval_metrics, f, indent=2)
 
     cleanup_distributed()
+    if is_main_process():
+        del model, base_model, optimizer, best_state
+        torch.cuda.empty_cache()
+        return eval_metrics
+
+
+def save_run_outputs(run_dir: Path, model: nn.Module, test_metrics: dict) -> None:
+    """Save test probabilities (small) and trainable weights only if they are small."""
+    np.savez_compressed(
+        run_dir / "test_probs.npz",
+        probs=test_metrics["probs"].astype(np.float32),
+        labels=test_metrics["labels"],
+        track_ids=test_metrics["track_ids"],
+    )
+    trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+    state = {k: v.cpu() for k, v in model.state_dict().items()
+             if k in trainable or "running_" in k or "num_batches_tracked" in k}
+    size_mb = sum(v.numel() * v.element_size() for v in state.values()) / 1e6
+    if size_mb <= MAX_SAVE_MB:
+        torch.save(state, run_dir / "trainable_weights.pt")
+        log.info("Saved trainable weights (%.1f MB) to %s", size_mb, run_dir / "trainable_weights.pt")
+    else:
+        log.info("Trainable weights are %.1f MB (> %d MB) — NOT saved to disk", size_mb, MAX_SAVE_MB)
 
 
 def main():

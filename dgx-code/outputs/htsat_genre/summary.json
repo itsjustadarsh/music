@@ -1,0 +1,53 @@
+{
+  "run_name": "htsat_genre",
+  "model": "htsat",
+  "best_epoch": 28,
+  "best_val_macro_f1": 0.5436811051285675,
+  "test": {
+    "episode_accuracy": 0.44583333333333336,
+    "episode_macro_f1": 0.4441257973744969,
+    "track_accuracy": 0.47375,
+    "track_macro_f1": 0.46990334846767484,
+    "n_episodes": 2400,
+    "n_tracks": 800
+  },
+  "config": {
+    "run_name": "htsat_genre",
+    "model": "htsat",
+    "num_classes": 8,
+    "target_sr": 32000,
+    "max_duration_sec": 10.0,
+    "n_mels": 128,
+    "embed_dim": 96,
+    "depths": [
+      2,
+      2,
+      6,
+      2
+    ],
+    "num_heads": [
+      3,
+      6,
+      12,
+      24
+    ],
+    "dataset_type": "episode",
+    "episode_sec": 10.0,
+    "batch_size": 32,
+    "num_workers": 4,
+    "epochs": 60,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "scheduler": "cosine_warmup",
+    "warmup_steps": 500,
+    "grad_accum_steps": 2,
+    "max_grad_norm": 1.0,
+    "dropout": 0.1,
+    "label_smoothing": 0.1,
+    "mixup_alpha": 0.3,
+    "seed": 42,
+    "early_stopping_patience": 15,
+    "use_amp": true,
+    "_out_root": "outputs"
+  }
+}

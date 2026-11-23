@@ -1,0 +1,64 @@
+{
+  "runs": {
+    "mert_lora_330m": {
+      "track_acc": 0.54375,
+      "track_f1": 0.5510740028825203,
+      "clip_acc": 0.5145,
+      "best_epoch": 2,
+      "minutes": 40.3
+    },
+    "mert_lora_95m": {
+      "track_acc": 0.52875,
+      "track_f1": 0.5191430560486552,
+      "clip_acc": 0.49225,
+      "best_epoch": 19,
+      "minutes": 57.3
+    },
+    "mert_unfreeze_330m": {
+      "track_acc": 0.53375,
+      "track_f1": 0.5303656503234162,
+      "clip_acc": 0.494625,
+      "best_epoch": 8,
+      "minutes": 50.5
+    },
+    "ast_finetune": {
+      "track_acc": 0.58125,
+      "track_f1": 0.5827381576329453,
+      "clip_acc": 0.5579166666666666,
+      "best_epoch": 1,
+      "minutes": 17.3
+    },
+    "htsat_genre": {
+      "track_acc": 0.47375,
+      "track_f1": 0.46990334846767484,
+      "clip_acc": 0.44583333333333336,
+      "best_epoch": 28,
+      "minutes": 91.9
+    },
+    "efficientat_genre": {
+      "track_acc": 0.55375,
+      "track_f1": 0.546352333216112,
+      "clip_acc": 0.5304166666666666,
+      "best_epoch": 41,
+      "minutes": 33.6
+    },
+    "mert_multicrop_330m": {
+      "track_acc": 0.53875,
+      "track_f1": 0.5408645393658775,
+      "clip_acc": 0.53875,
+      "best_epoch": 10,
+      "minutes": 63.9
+    }
+  },
+  "failed": {},
+  "ensembles": {
+    "mert_lora_330m+mert_lora_95m+ast_finetune+htsat_genre": {
+      "track_acc": 0.58875,
+      "track_f1": 0.587737524584119
+    },
+    "mert_lora_330m+mert_lora_95m+mert_unfreeze_330m+ast_finetune+htsat_genre+efficientat_genre+mert_multicrop_330m": {
+      "track_acc": 0.585,
+      "track_f1": 0.5821292747333091
+    }
+  }
+}

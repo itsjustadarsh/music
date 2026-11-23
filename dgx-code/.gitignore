@@ -1,0 +1,26 @@
+# Datasets
+fma_data/
+*.zip
+*.mp3
+*.wav
+*.npy
+
+# Model weights / checkpoints
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+
+# Environments and caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.hf_cache/
+.cache/
+outputs_smoke/
+
+# Logs
+logs/
+*.log
