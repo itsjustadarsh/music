@@ -221,3 +221,40 @@ class FMAEpisodeDataset(Dataset):
                 episode = episode + noise
 
         return episode, label, track_id
+
+
+class FMARandomCropDataset(Dataset):
+    """Training-only: each item is a random `crop_sec` window from a full track.
+
+    `repeats` = how many random crops per track per epoch. Gives far more
+    variety than fixed episodes, which reduces overfitting of large models.
+    """
+
+    def __init__(self, split: str, target_sr: int = 16000, crop_sec: float = 10.0,
+                 repeats: int = 3, augment: bool = True):
+        self.metadata = load_fma_metadata()
+        self.metadata = self.metadata[self.metadata["split"] == split].reset_index(drop=True)
+        self.track_ids = self.metadata["track_id"].astype(int).to_numpy()
+        self.labels = self.metadata["genre"].map(GENRE_TO_IDX).to_numpy()
+        self.target_sr = target_sr
+        self.crop = int(crop_sec * target_sr)
+        self.repeats = repeats
+        self.augment = augment
+
+    def __len__(self) -> int:
+        return len(self.metadata) * self.repeats
+
+    def __getitem__(self, idx: int):
+        i = idx % len(self.metadata)
+        tid = int(self.track_ids[i])
+        wav = load_waveform(tid, self.target_sr)
+        max_start = max(0, wav.shape[0] - self.crop)
+        s = int(torch.randint(0, max_start + 1, (1,)))
+        x = wav[s : s + self.crop]
+        if x.shape[0] < self.crop:
+            x = torch.cat([x, torch.zeros(self.crop - x.shape[0])])
+        if self.augment:
+            x = x * (10 ** (torch.empty(1).uniform_(-6, 6).item() / 20))
+            if torch.rand(1).item() < 0.3:
+                x = x + torch.randn_like(x) * 0.003
+        return x, int(self.labels[i]), tid

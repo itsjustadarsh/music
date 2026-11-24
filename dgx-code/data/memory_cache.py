@@ -51,11 +51,26 @@ def _fetch(url: str, sha1: str) -> bytes:
     t0 = time.time()
     h = hashlib.sha1()
     buf = io.BytesIO()
-    with requests.get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        for chunk in r.iter_content(chunk_size=1 << 22):
+    # curl streams to our stdout pipe (RAM only); on a dropped connection we
+    # resume from the last byte received with a Range request.
+    import subprocess
+    total = int(requests.head(url, timeout=60, allow_redirects=True).headers["Content-Length"])
+    for attempt in range(1, 31):
+        cmd = ["curl", "-sSL", "--fail", "--speed-limit", "100000", "--speed-time", "60"]
+        if buf.tell():
+            cmd += ["-r", f"{buf.tell()}-"]
+        p = subprocess.Popen(cmd + [url], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        while chunk := p.stdout.read(1 << 20):
             buf.write(chunk)
             h.update(chunk)
+        p.wait()
+        if buf.tell() >= total:
+            break
+        log.warning("  download interrupted at %.2f/%.2f GB (attempt %d): %s", buf.tell() / 1e9,
+                    total / 1e9, attempt, p.stderr.read().decode(errors="replace").strip()[:200])
+        time.sleep(min(60, 5 * attempt))
+    else:
+        raise RuntimeError(f"Download of {url} failed after retries")
     data = buf.getvalue()
     if h.hexdigest() != sha1:
         raise RuntimeError(f"SHA1 mismatch for {url}: {h.hexdigest()} != {sha1}")

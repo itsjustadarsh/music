@@ -1,0 +1,115 @@
+{
+  "run_name": "ast_v2",
+  "best_epoch": 3,
+  "best_val_macro_f1": 0.6467361374962518,
+  "clip_level": {
+    "accuracy": 0.5654166666666667,
+    "macro_f1": 0.563686304833571,
+    "per_genre": {
+      "Electronic": {
+        "precision": 0.706081081081081,
+        "recall": 0.6966666666666667,
+        "f1": 0.7013422818791947,
+        "support": 300
+      },
+      "Experimental": {
+        "precision": 0.4,
+        "recall": 0.4066666666666667,
+        "f1": 0.4033057851239669,
+        "support": 300
+      },
+      "Folk": {
+        "precision": 0.3225806451612903,
+        "recall": 0.3,
+        "f1": 0.31088082901554404,
+        "support": 300
+      },
+      "Hip-Hop": {
+        "precision": 0.7701492537313432,
+        "recall": 0.86,
+        "f1": 0.8125984251968504,
+        "support": 300
+      },
+      "Instrumental": {
+        "precision": 0.40059347181008903,
+        "recall": 0.45,
+        "f1": 0.423861852433281,
+        "support": 300
+      },
+      "International": {
+        "precision": 0.6676923076923077,
+        "recall": 0.7233333333333334,
+        "f1": 0.6944,
+        "support": 300
+      },
+      "Pop": {
+        "precision": 0.5131086142322098,
+        "recall": 0.45666666666666667,
+        "f1": 0.48324514991181655,
+        "support": 300
+      },
+      "Rock": {
+        "precision": 0.73828125,
+        "recall": 0.63,
+        "f1": 0.6798561151079137,
+        "support": 300
+      }
+    }
+  },
+  "track_level": {
+    "accuracy": 0.595,
+    "macro_f1": 0.5931002685723472,
+    "per_genre": {
+      "Electronic": {
+        "precision": 0.7087378640776699,
+        "recall": 0.73,
+        "f1": 0.7192118226600985,
+        "support": 100
+      },
+      "Experimental": {
+        "precision": 0.4639175257731959,
+        "recall": 0.45,
+        "f1": 0.45685279187817257,
+        "support": 100
+      },
+      "Folk": {
+        "precision": 0.3263157894736842,
+        "recall": 0.31,
+        "f1": 0.31794871794871793,
+        "support": 100
+      },
+      "Hip-Hop": {
+        "precision": 0.7837837837837838,
+        "recall": 0.87,
+        "f1": 0.8246445497630331,
+        "support": 100
+      },
+      "Instrumental": {
+        "precision": 0.4444444444444444,
+        "recall": 0.48,
+        "f1": 0.46153846153846156,
+        "support": 100
+      },
+      "International": {
+        "precision": 0.6880733944954128,
+        "recall": 0.75,
+        "f1": 0.7177033492822966,
+        "support": 100
+      },
+      "Pop": {
+        "precision": 0.5268817204301075,
+        "recall": 0.49,
+        "f1": 0.5077720207253886,
+        "support": 100
+      },
+      "Rock": {
+        "precision": 0.8095238095238095,
+        "recall": 0.68,
+        "f1": 0.7391304347826086,
+        "support": 100
+      }
+    }
+  },
+  "n_clips": 2400,
+  "n_tracks": 800
+}

@@ -104,6 +104,7 @@ def build_model(cfg: dict) -> nn.Module:
             max_duration_sec=cfg.get("max_duration_sec", 10.0),
             freeze_layers=cfg.get("freeze_layers", 0),
             dropout=cfg.get("dropout", 0.3),
+            spec_augment=cfg.get("spec_augment", False),
         )
 
     elif model_type == "efficientat":
@@ -136,6 +137,16 @@ def build_dataset(cfg: dict, split: str):
     target_sr = cfg.get("target_sr", 24000)
     augment = split == "train"
 
+    if dataset_type == "random_crop":
+        from data.dataset import FMAEpisodeDataset, FMARandomCropDataset
+        if split == "train":
+            return FMARandomCropDataset(
+                split=split, target_sr=target_sr, crop_sec=cfg.get("episode_sec", 10.0),
+                repeats=cfg.get("crop_repeats", 3),
+            )
+        # val/test: fixed non-overlapping windows, averaged per track
+        return FMAEpisodeDataset(split=split, target_sr=target_sr,
+                                 episode_sec=cfg.get("episode_sec", 10.0), augment=False)
     if dataset_type == "full_track":
         from data.dataset import FMAFullTrackDataset
         return FMAFullTrackDataset(
@@ -540,6 +551,10 @@ def train(cfg: dict, resume_path: str | None = None):
 
         test_metrics = evaluate_track_level(base_model, test_loader, device, use_amp)
         save_run_outputs(run_dir, base_model, test_metrics)
+        # Val probabilities too, so ensemble weights can be chosen on val (not test)
+        val_metrics = evaluate_track_level(base_model, val_loader, device, use_amp)
+        np.savez_compressed(run_dir / "val_probs.npz", probs=val_metrics["probs"].astype(np.float32),
+                            labels=val_metrics["labels"], track_ids=val_metrics["track_ids"])
 
         log.info(
             "TEST  episode_acc=%.4f episode_f1=%.4f  track_acc=%.4f track_f1=%.4f  (%d episodes, %d tracks)",

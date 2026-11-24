@@ -1,0 +1,42 @@
+{
+  "run_name": "ast_v2",
+  "model": "ast_finetune",
+  "best_epoch": 3,
+  "best_val_macro_f1": 0.6467361374962518,
+  "test": {
+    "episode_accuracy": 0.5654166666666667,
+    "episode_macro_f1": 0.563686304833571,
+    "track_accuracy": 0.595,
+    "track_macro_f1": 0.5931002685723472,
+    "n_episodes": 2400,
+    "n_tracks": 800
+  },
+  "config": {
+    "run_name": "ast_v2",
+    "model": "ast_finetune",
+    "num_classes": 8,
+    "target_sr": 16000,
+    "max_duration_sec": 10.0,
+    "freeze_layers": 4,
+    "spec_augment": true,
+    "dataset_type": "random_crop",
+    "episode_sec": 10.0,
+    "crop_repeats": 3,
+    "batch_size": 32,
+    "num_workers": 4,
+    "epochs": 15,
+    "lr": 2e-05,
+    "weight_decay": 0.05,
+    "scheduler": "cosine_warmup",
+    "warmup_steps": 300,
+    "grad_accum_steps": 1,
+    "max_grad_norm": 1.0,
+    "dropout": 0.3,
+    "label_smoothing": 0.1,
+    "mixup_alpha": 0.4,
+    "seed": 42,
+    "early_stopping_patience": 5,
+    "use_amp": true,
+    "_out_root": "outputs"
+  }
+}

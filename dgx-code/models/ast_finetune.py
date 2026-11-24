@@ -38,8 +38,13 @@ class ASTFinetune(nn.Module):
         freeze_layers: int = 0,
         dropout: float = 0.3,
         hidden_size: int = 768,
+        spec_augment: bool = False,
     ):
         super().__init__()
+        self.spec_augment = spec_augment
+        # SpecAugment on the (time, freq) fbank, applied only in training
+        self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=24, iid_masks=True)
+        self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=96, iid_masks=True)
         self.target_sr = target_sr
         self.max_samples = int(max_duration_sec * target_sr)
         self.num_classes = num_classes
@@ -99,6 +104,11 @@ class ASTFinetune(nn.Module):
             padding=True,
         )
         input_values = inputs["input_values"].to(device)
+        if self.training and self.spec_augment:
+            x = input_values.transpose(1, 2).unsqueeze(1)  # (B, 1, freq, time)
+            x = self.time_mask(self.freq_mask(x))
+            x = self.time_mask(x)
+            input_values = x.squeeze(1).transpose(1, 2)
 
         outputs = self.backbone(input_values=input_values)
 
