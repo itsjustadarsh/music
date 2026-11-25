@@ -35,6 +35,7 @@ And the hand-written files that explain what they mean:
 | [`docs/LITERATURE.md`](docs/LITERATURE.md) | What each of nine papers *states* about its protocol, plus three circulating "records" that do not survive checking |
 | [`docs/NEGATIVE_RESULTS.md`](docs/NEGATIVE_RESULTS.md) | What we built that did not work, and one claim we withdrew |
 | [`docs/DATA_CARD.md`](docs/DATA_CARD.md) | FMA-small as we use it |
+| [`docs/form-submission/`](docs/form-submission/) | Standalone LaTeX submission package — `main.tex`, 27 figures, `references.bib`, compiled PDF |
 
 ## The two rules everything here obeys
 
@@ -95,15 +96,21 @@ src/
   evaluation/     Track-level metrics, output caching, baseline comparison
   config.py       Shared paths and constants
 scripts/          The ladder, the generators, ensembling, analysis utilities
+dgx-code/         DGX fine-tuning pipeline (LoRA, AST, HTS-AT, EfficientAT, ensembles)
 docs/             See the tables above
+docs/form-submission/  Standalone LaTeX — compiles with `make pdf`, no pandoc needed
 ```
 
 ## Hardware
 
-A laptop with an Apple M-series chip (MPS backend). Spectrogram models take 30–60 minutes
-per run; probes over cached embeddings take 1–3 minutes. Embedding extraction wants ~16 GB
-of RAM. **Runs must be sequential** — two jobs contending for the single MPS device took
-DenseNet from 350s/epoch to 1800s/epoch.
+**Laptop (probes + from-scratch models):** Apple M-series chip (MPS backend). Spectrogram
+models take 30–60 minutes per run; probes over cached embeddings take 1–3 minutes. Embedding
+extraction wants ~16 GB of RAM. **Runs must be sequential** — two jobs contending for the
+single MPS device took DenseNet from 350s/epoch to 1800s/epoch.
+
+**DGX (fine-tuning + large probes):** NVIDIA H200 single-GPU. Round 1 fine-tuning (~6
+GPU-hours) and Round 2 frozen-encoder probes + ensembles. Best single model: AST Probe
+62.0%; best ensemble: 62.1%.
 
 ## License
 

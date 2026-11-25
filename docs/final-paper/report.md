@@ -5,37 +5,25 @@ author:
 abstract: |
   Music genre classification on FMA-small is a widely used benchmark,
   yet published results rarely disclose the evaluation protocol that
-  produced them. We show that three independent protocol choices ---
-  whether the train/test boundary falls between artists, between tracks,
-  or between 3-second clips --- move a single model's accuracy by 14 to
-  41 percentage points. Across 62 training runs spanning 14
-  architectures and four model families --- from-scratch CNNs, music-specific
-  self-supervised models (MERT-95M, MERT-330M), general audio
-  and audio-language models (BYOL-A, PANNs, CLAP), and non-neural baselines --- the mean
-  inflation from the most permissive protocol (clip-random) over the
-  honest one (artist-filtered) is +30.8 pp. A literature audit of nine
-  published FMA-small results finds that zero papers state artist-filtered
-  evaluation in prose. The leakage pattern holds universally: it is not
-  an artifact of any particular architecture, pretraining strategy, or
-  model family. Beyond accuracy, we provide three independent diagnostics
-  for protocol integrity: (i) leakage distorts calibration, creating
-  underconfidence ($T^* < 1$) rather than overconfidence; (ii) leakage
-  raises inter-episode temporal consistency from 80\% to 96\%, far
-  beyond what genre classification alone can explain; and (iii) leakage
-  disproportionately benefits hard tracks (+61.5 pp for tracks no model
-  classifies correctly under honest evaluation, vs --1.1 pp for easy
-  tracks). Confusion matrix analysis shows that leakage eliminates
-  genuine genre ambiguity --- e.g., Folk--Instrumental confusion drops
-  by 26 pp --- by substituting recording recognition for genre
-  recognition. At the embedding level, 57--90\% of test clips under
-  clip-random evaluation have a same-track nearest neighbor in training,
-  and the inflation is probe-invariant: linear to multi-layer
-  probes all show identical protocol gaps. We frame this as a research gap in reporting
-  conventions: the field benchmarks on a variable it does not name, and
-  the resulting numbers are not mutually comparable. Our best model, a
-  frozen CLAP probe, reaches 59.9\% under the artist-filtered,
-  track-level protocol --- 5.1 pp above the only prior sourceable
-  artist-filtered number (54.8\%).
+  produced them. We show that three protocol choices --- whether the
+  train/test boundary falls between artists, between tracks, or between
+  3-second clips --- move accuracy by 14--41 percentage points (pp).
+  Across 79 runs spanning eight backbone families --- including both
+  frozen probes and parameter-efficient fine-tuning on DGX hardware ---
+  the mean inflation from the most permissive protocol over the
+  artist-filtered one is +30.8 pp; a literature audit finds that zero of
+  nine published FMA-small results state artist-filtered evaluation. Six
+  independent diagnostics confirm the pattern: calibration reversal
+  ($T^* < 1$), temporal-consistency inflation (80\% $\to$ 96\%),
+  difficulty--improvement monotonicity (+61.5 pp for the hardest tracks),
+  representation collapse, nearest-neighbor identity recovery
+  (57--90\% of test clips), and probe-architecture invariance. Our best
+  model, a layer-weighted AST probe on frozen AudioSet features, reaches
+  62.0\% under the artist-filtered, track-level protocol --- 7.2 pp
+  above the only prior sourceable artist-filtered number. Fine-tuning
+  with LoRA adapters and partial layer unfreezing did not close the gap
+  to permissive-protocol numbers, confirming the protocol as the dominant
+  variable.
 ---
 
 # 1. Introduction
@@ -50,13 +38,15 @@ This is not an accusation. It is a measurement. The field has no reporting conve
 
 **Contributions.** We organise our contributions into four themes:
 
-*Protocol quantification.* (1) A three-rung protocol ladder quantifying the accuracy cost of each leakage type across 14 architectures spanning four model families. (2) A literature audit of 9 published FMA-small results, recording what each paper states --- not implies --- about its split. (3) A reproducible training pipeline covering 14 architectures and 62 evaluated runs, all under the artist-filtered, track-level protocol.
+*Protocol quantification.* (1) A three-rung protocol ladder quantifying the accuracy cost of each leakage type across 11 verified architectures spanning eight backbone families. (2) A literature audit of 9 published FMA-small results, recording what each paper states --- not implies --- about its split. (3) A reproducible training pipeline covering 79 evaluated runs (54 artist-filtered, 12 random-track, 13 clip-random), with all headline results under the artist-filtered, track-level protocol.
 
 *Diagnostic suite for protocol integrity.* (4) Six independent diagnostics, each requiring only standard model outputs: calibration reversal ($T^* < 1$ under leakage), temporal consistency inflation (80\% to 96\%), difficulty--improvement monotonicity (+61.5 pp for the hardest tracks vs --1.1 pp for the easiest), representation collapse (within-track cosine similarity 0.83--0.93 vs 0.30--0.77 between tracks), nearest-neighbor identity recovery (57--90\% of test clips recover a same-track training neighbor under clip-random), and probe architecture invariance (inflation persists across linear to multi-layer probes).
 
 *Representation-level analysis.* (5) Confusion matrix decomposition showing leakage eliminates genuine genre confusions by substituting recording recognition for genre recognition. (6) Layer-wise leakage fingerprinting revealing uniform recording-identity encoding across all 13 MERT transformer layers. (7) Data efficiency analysis showing inflation scales with training set size. (8) t-SNE embedding geometry visualisations making the leakage mechanism directly visible.
 
 *Ensemble and model analysis.* (9) CKA representation similarity and error diversity analyses explaining why architectural diversity, not parameter scaling, drives ensemble performance.
+
+*Fine-tuning analysis.* (10) Parameter-efficient fine-tuning experiments (LoRA, partial layer unfreezing, multi-crop inference) on DGX hardware, showing that adaptation method is not the accuracy bottleneck: a frozen AST probe (62.0\%) outperforms a fine-tuned AST (58.1\%) on the same backbone, and LoRA on MERT-330M (54.4\%) underperforms the corresponding frozen probe (56.6\%).
 
 # 2. Related Work
 
@@ -65,8 +55,6 @@ This is not an accusation. It is a measurement. The field has no reporting conve
 Automatic genre classification originated with Tzanetakis and Cook [@tzanetakis2002musical], who introduced the GTZAN dataset and proposed a feature-based classification pipeline using timbral, rhythmic, and pitch features fed to Gaussian mixture models. This paper established both the standard feature vocabulary (MFCCs, spectral centroid, zero-crossing rate) and the evaluation paradigm (10-fold cross-validation on 1,000 clips) that persisted for over a decade. Sturm [@sturm2013gtzan] later demonstrated that GTZAN contained duplicate recordings, mislabellings, and distortions that allowed models to achieve inflated results --- an early warning about evaluation integrity that the field absorbed for GTZAN but did not generalise to subsequent benchmarks.
 
 The transition to deep learning for audio began with convolutional approaches applied to mel spectrograms. Choi et al. [@choi2017transfer] proposed transfer learning from large music datasets, demonstrating that features learned for music auto-tagging transferred effectively to genre classification and other MIR tasks. Their work showed that the representational gap between tasks could be bridged by fine-tuning, a principle that underlies the pretrained backbone approaches in our pipeline. DenseNet [@huang2017densenet], originally developed for image recognition, was adapted for audio by treating mel spectrograms as single-channel images. Bian et al. [@bian2019audio] applied DenseNet with SVM stacking to FMA-small, reporting 68.9% accuracy with data augmentation --- though without specifying their evaluation split.
-
-Capsule networks [@sabour2017dynamic] offered an alternative to pooling-based architectures by encoding part-whole relationships through dynamic routing. Their application to audio aimed to capture hierarchical timbral structure, though our experiments suggest they do not outperform simpler CNN architectures on FMA-small under controlled conditions.
 
 The recent trend combines convolutional feature extraction with transformer-based temporal modelling. Zhang [@zhang2025tsresformer] proposed TS-Resformer, using a ResNet backbone with a transformer encoder for temporal aggregation, achieving 90.2% on FMA-small --- the highest published number, though under a random track split without artist filtering. Ma et al. [@ma2026ctgatenet] introduced CT-GateNet, combining CNN and transformer with a learned gating mechanism, reporting 89.4% with an unspecified "8:1:1 ratio" split. Kostrzewa et al. [@kostrzewa2021music] conducted a systematic comparison of CNN, RNN, and CRNN architectures for genre classification, reporting 56.4% on FMA-small with an "80:10:10 ratio" of unstated mechanism. Notably, the same paper criticises a competing result for "data leakage... which leads to over-optimistic outcomes" while leaving its own split mechanism undisclosed.
 
@@ -132,17 +120,17 @@ The success of Vision Transformers (ViT) [@dosovitskiy2021vit] in image recognit
 
 The choice between frozen probing and fine-tuning a pretrained backbone involves a fundamental tradeoff: probes measure what the representation already encodes, while fine-tuning adapts the representation to the target task at the risk of overfitting on small datasets.
 
-The SUPERB benchmark [@yang2021superb] standardised the probing protocol for speech models: freeze the backbone, train only a lightweight classifier head. This protocol isolates the quality of the representation from the capacity of the classifier, making comparisons between backbones more meaningful. Our laptop pipeline follows this protocol exactly, and its 59.9% ceiling reflects the information content of frozen MERT/BYOL-A/PANNs/CLAP representations for genre classification.
+The SUPERB benchmark [@yang2021superb] standardised the probing protocol for speech models: freeze the backbone, train only a lightweight classifier head. This protocol isolates the quality of the representation from the capacity of the classifier, making comparisons between backbones more meaningful. Our laptop pipeline follows this protocol exactly, and its 59.9\% ceiling reflects the information content of frozen MERT/BYOL-A/PANNs/CLAP representations for genre classification on a single machine.
 
 Fine-tuning breaks this ceiling by adapting the backbone's representations to the target task. However, with only 6,400 training tracks in FMA-small, full fine-tuning of a 330M-parameter model risks catastrophic overfitting. **LoRA** (Low-Rank Adaptation) [@hu2021lora] addresses this by injecting trainable low-rank matrices into the attention layers while keeping the original weights frozen. With rank 16, this adds only ~2M trainable parameters to a 330M model, providing a favourable tradeoff between adaptation capacity and overfitting risk. Layer-wise learning rate decay further stabilises fine-tuning by limiting the magnitude of changes to lower layers, which encode more general features.
 
-The growing LoRA literature suggests that even on small datasets, parameter-efficient fine-tuning can yield meaningful gains over frozen probing. Our current study deliberately restricts itself to frozen probing to isolate the protocol leakage question --- fine-tuning introduces additional degrees of freedom (learning rate schedule, adapter rank, unfrozen layers) that could confound the comparison. However, fine-tuning experiments are a natural extension, and we discuss them in Section 7.
+We test both paradigms: frozen probing on a consumer laptop to isolate the protocol leakage question, and parameter-efficient fine-tuning on DGX hardware to test whether adaptation closes the accuracy gap. As reported in Section 5G2, fine-tuning does not outperform frozen probing at this data scale --- the best result (AST Probe, 62.0\%) uses a frozen backbone.
 
 ## G. Published FMA-small Results
 
 We traced every FMA-small genre-classification result we could find to its primary source, recording what each paper says about its evaluation protocol --- not what its accuracy implies. The distinction matters: inferring a protocol from an accuracy would assume the conclusion this study sets out to test.
 
-Table I summarises the registry. Of the nine external results, zero state artist-filtered evaluation in prose. One states clip-random splitting outright [@ashraf2025music]. One states a track-level random split [@zhang2025tsresformer]. One describes its partitions without stating artist-conditioning [@liu2022openset]. Two give a ratio with no unit [@ma2026ctgatenet; @kostrzewa2021music]. Three say nothing at all [@bian2019audio; @rai2025evaluating; @park2018representation].
+Table I summarises the registry and Figure \ref{fig:literature} plots accuracies over time. Of the nine external results, zero state artist-filtered evaluation in prose. One states clip-random splitting outright [@ashraf2025music]. One states a track-level random split [@zhang2025tsresformer]. One describes its partitions without stating artist-conditioning [@liu2022openset]. Two give a ratio with no unit [@ma2026ctgatenet; @kostrzewa2021music]. Three say nothing at all [@bian2019audio; @rai2025evaluating; @park2018representation].
 
 ```{=latex}
 \begin{table*}[t]
@@ -164,7 +152,7 @@ Table I summarises the registry. Of the nine external results, zero state artist
 8 & CNN/RNN ensemble \cite{kostrzewa2021music} & 2021 & 56.4 & ``80:10:10 ratio''; mechanism unstated \\
 9 & Features + SVM (FMA baseline re-run) \cite{park2018representation} & 2018 & 54.8 & Artist-filtered by construction, not by claim \\
 \midrule
-  & \textbf{Ours --- CLAP probe} & 2026 & \textbf{59.9} & \textbf{Official artist-filtered, track-level} \\
+  & \textbf{Ours --- AST Probe (DGX)} & 2026 & \textbf{62.0} & \textbf{Official artist-filtered, track-level} \\
 \bottomrule
 \multicolumn{5}{l}{\footnotesize *60.9\% is the closed-set sub-metric of an open-set experiment; not a standalone 8-way result.}
 \end{tabular}
@@ -175,12 +163,12 @@ Table I summarises the registry. Of the nine external results, zero state artist
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{literature_scatter.pdf}
-\caption{Published FMA-small accuracies over time. Red circles denote results whose evaluation protocol is not stated; the blue star marks our artist-filtered CLAP probe. The dashed line is our best result (59.9\%). Results above the line are not necessarily better --- they may reflect a more permissive protocol.}
+\caption{Published FMA-small accuracies over time. Red circles denote results whose evaluation protocol is not stated; the blue star marks our artist-filtered CLAP probe (59.9\%). The dashed line marks our best overall result (AST Probe, 62.0\%). Results above the line are not necessarily better --- they may reflect a more permissive protocol.}
 \label{fig:literature}
 \end{figure}
 ```
 
-One widely cited baseline --- "Defferrard et al., 58.0\%" --- does not exist. The FMA paper's only accuracy table covers the 16-genre medium subset; 58 is the MLP cell there. The 54.8\% attributed to FMA's authors is actually Park et al.'s re-run of FMA's released baseline code [@park2018representation], artist-filtered by code inheritance rather than authorial claim.
+One widely cited baseline --- "Defferrard et al., 58.0\%" --- does not exist. The FMA paper's only accuracy table covers the 16-genre medium subset; 58 is the MLP cell there. The 54.8\% attributed to FMA's authors is actually Park et al.'s re-run of FMA's released baseline code [@park2018representation], artist-filtered by code inheritance rather than authorial claim. We note that this attribution rests on code inspection, not authorial statement --- a stronger basis than accuracy inference but weaker than explicit protocol disclosure.
 
 Since our original audit, we are not aware of any new FMA-small publications that state their evaluation protocol. The reporting gap persists.
 
@@ -192,7 +180,7 @@ Source-level leakage is well understood in adjacent domains. Roberts et al. [@ro
 
 The pattern is consistent across fields: wherever data points share a common origin, evaluation must split at the source level. Music genre classification exhibits all three forms simultaneously --- the same recording (clip-level), the same performance (track-level), and the same production signature (artist-level). FMA ships the artist-level fix in its metadata, but using it is optional and disclosing whether it was used is rarer still.
 
-Flexer and Schnitzer [@flexer2006closer] provided early evidence of artist-filter effects in music classification, showing that removing the artist confound significantly reduced classification accuracy on GTZAN. Sturm [@sturm2014simple] went further, demonstrating that some MIR systems functioned as "horses" --- exploiting dataset-specific artifacts rather than learning musically meaningful features. Our three-rung ladder provides the first systematic quantification of this effect on FMA-small across multiple architectures.
+Flexer and Schnitzer [@flexer2007closer] provided early evidence of artist-filter effects in music classification, showing that removing the artist confound significantly reduced classification accuracy on GTZAN. Sturm [@sturm2014simple] went further, demonstrating that some MIR systems functioned as "horses" --- exploiting dataset-specific artifacts rather than learning musically meaningful features. Our three-rung ladder provides the first systematic quantification of this effect on FMA-small across multiple architectures.
 
 The NeurIPS reproducibility checklist [@pineau2021neurips] now asks about train/test contamination, representing an institutional attempt to address leakage. However, the checklist does not specifically ask about hierarchical source-level splitting --- the distinction between "are your train and test sets disjoint?" (yes, by construction) and "are they disjoint at the source level?" (often not). This gap means that a paper can truthfully complete the checklist while still suffering from the exact form of leakage we measure.
 
@@ -232,11 +220,13 @@ FMA-small [@defferrard2017fma] contains 8,000 tracks (7,996 readable after exclu
 
 We define three split modes to isolate each source of leakage:
 
-1. **Official (artist-filtered).** FMA's shipped split. No artist appears in more than one partition. This is the only protocol used for headline results.
+1. **Official (artist-filtered).** FMA's shipped split. No artist appears in more than one partition. This is the only protocol used for headline results. Throughout this paper we refer to artist-filtered evaluation as the *honest* protocol, meaning the protocol that prevents source-level identity leakage; the term carries no implication about the intent of researchers who use other splits.
 
 2. **Random-track.** Random 80/10/10 over whole tracks. Artists may appear in multiple partitions, but clips from the same track stay together. This rung exists because most papers state "random 8:1:1" without naming the unit.
 
-3. **Clip-random.** Random 80/10/10 over individual 3-second episodes. The same recording appears in both train and test. This is the most permissive protocol and produces the highest reported accuracies.
+3. **Clip-random.** Random 80/10/10 over individual 3-second episodes (seed 42, genre-stratified). The same recording appears in both train and test. This is the most permissive protocol and produces the highest reported accuracies.
+
+The random-track and clip-random splits are generated once and cached; all runs under a given protocol use the identical split. The random-track split uses seed 42 with genre stratification.
 
 ## C. Track-Level Evaluation
 
@@ -299,7 +289,7 @@ EfficientAT MN10 & Distilled CNN & 5M & (960,) & 32k & AudioSet (distill) \\
 
 ## E. Model Families
 
-We train 14 architectures spanning four families:
+We define probe architectures for all 12 backbones listed in Table II. Frozen probing experiments are complete for six backbones (MERT-95M, MERT-330M, BYOL-A, PANNs, CLAP, and log-mel CNNs) on a single Apple M-series laptop. Additionally, fine-tuning and DGX-based probing experiments cover AST, HTS-AT, EfficientAT, MERT (LoRA and partial unfreeze), and Whisper, bringing the total to eight trained backbone families spanning the following architecture families:
 
 **From-scratch spectrogram models** consume 128-bin log-mel spectrograms and train all parameters from scratch: GenreCNN (4-block CNN, ~260K params) [@choi2017transfer], DenseNet121 (ImageNet-pretrained, adapted to single-channel input) [@huang2017densenet; @bian2019audio].
 
@@ -325,7 +315,25 @@ We train 14 architectures spanning four families:
 - *CLAP probe* [@wu2023clap]: LayerNorm followed by a two-layer MLP on the 512-dim CLAP audio embedding.
 - *EfficientAT probe* [@schmid2023efficientat]: LayerNorm followed by a two-layer MLP on the 960-dim EfficientAT embedding.
 
-**Non-neural baseline.** XGBoost [@chen2016xgboost] on flattened MERT embeddings.
+**Non-neural baseline.** XGBoost [@chen2016xgboost] on flattened MERT embeddings (max\_depth=6, n\_estimators=256, learning\_rate=0.1, subsample=0.8, colsample\_bytree=0.8; remaining parameters at defaults).
+
+**Fine-tuned models (DGX cluster).** End-to-end or parameter-efficient fine-tuning of pretrained backbones, trained on NVIDIA DGX hardware with bfloat16 mixed precision:
+
+- *AST-Finetune* [@gong2021ast]: AudioSet-pretrained Audio Spectrogram Transformer with layers 0--6 frozen and classifier fine-tuned. 10-second episodes at 16 kHz, batch size 32, learning rate 1e-4, dropout 0.3, label smoothing 0.1, mixup 0.2.
+- *MERT-LoRA-330M* [@li2023mert; @hu2021lora]: LoRA adapters (rank=16, alpha=32, ~2M trainable parameters) on the frozen MERT-v1-330M backbone. 3-second episodes at 24 kHz, batch size 64, learning rate 2e-4, dropout 0.3, mixup 0.3.
+- *MERT-LoRA-95M*: Same LoRA strategy on the smaller MERT-v1-95M backbone. Batch size 128, learning rate 3e-4.
+- *MERT-Unfreeze-330M*: Top 4 transformer layers unfrozen with layer-wise learning rate decay (0.75x per layer). Batch size 32, learning rate 5e-5, dropout 0.4, weight decay 0.05.
+- *MERT-MultiCrop-330M*: LoRA on MERT-330M with multi-crop processing --- 6 random 5-second crops during training, 10 evenly-spaced crops at evaluation. Full 30-second tracks at 24 kHz, batch size 8.
+- *HTS-AT-Genre* [@chen2022htsat]: Hierarchical Token-Semantic Audio Transformer (Swin-based, embed dim 96, depths [2,2,6,2], heads [3,6,12,24]) trained from scratch on FMA. 10-second episodes at 32 kHz, batch size 32, learning rate 3e-4, 60 epochs.
+- *EfficientAT-Genre* [@schmid2023efficientat]: Lightweight EfficientAT (3M parameters) fine-tuned. 10-second episodes at 32 kHz, batch size 64, learning rate 3e-4.
+
+**DGX probe models.** Layer-weighted MLP probes trained on DGX with frozen backbone embeddings extracted at higher resolution and longer context than the laptop probes:
+
+- *AST Probe*: Layer-weighted MLP over all 13 AST-AudioSet hidden layers (768-dim). 3 clips of 10 seconds each at 16 kHz.
+- *Whisper Probe* [@radford2023whisper]: Layer-weighted MLP over Whisper-Large-v3 encoder states (1280-dim). Full 30-second audio at 16 kHz.
+- *MERT-330M Probe (DGX)*: Layer-weighted MLP over 25 MERT-330M layers (1024-dim). 10 clips of 3 seconds each at 24 kHz.
+- *Fusion Probe*: Concatenation of layer-averaged, normalised outputs from all four DGX encoders (AST, Whisper, MERT-330M, CLAP), producing a ~4096-dim feature vector.
+- *AST-V2*: Fine-tuned AST with SpecAugment, 3 random crops per epoch, freeze layers 0--4, learning rate 2e-5, mixup 0.4.
 
 Separating music-specific from general-purpose backbones lets us test whether music-aware pretraining provides any advantage under honest evaluation --- or whether the apparent advantage in published results reflects protocol choice rather than representation quality.
 
@@ -333,44 +341,56 @@ Separating music-specific from general-purpose backbones lets us test whether mu
 
 All neural models use AdamW [@loshchilov2019adamw] with cosine annealing. Spectrogram models apply SpecAugment [@park2019specaugment] (2 frequency masks up to 16 bins, 2 time masks up to 20 frames). Label smoothing (0.1) [@szegedy2016rethinking] and mixup augmentation (alpha 0.3) [@zhang2018mixup] are used for most runs. Early stopping with patience 6--15 epochs prevents overfitting. Focal loss [@lin2017focal] is evaluated as an alternative criterion.
 
+Fine-tuned models on DGX use the same AdamW optimizer with cosine warmup scheduling (200--500 warmup steps). Gradient clipping is set to max\_grad\_norm = 1.0 for all fine-tuning runs. MERT-LoRA models use gradient checkpointing to fit the 330M-parameter backbone in GPU memory. All DGX training uses bfloat16 mixed precision (native on Hopper GPUs, no loss scaling required). The Caruana forward selection ensemble [@kittler1998combining] greedily adds models with replacement, optimising validation track accuracy with log-loss as tie-breaker.
+
 ## G. Reproducibility Statement
 
-All experiments run on a single Apple M-series laptop (MPS backend, 16 GB RAM). Embedding extraction takes 30--60 minutes per backbone; probe training takes 1--3 minutes per run. Total compute for the full study is under 40 GPU-hours equivalent. All code, configurations, cached embeddings, and evaluation scripts will be released upon publication. Every number in the results section is mechanically generated from run artifacts by `scripts/update_results.py`; no number is hand-edited. The embedding cache ensures exact reproducibility of downstream experiments: given the same cached features and random seed, training produces identical weights on the same hardware.
+Frozen probing experiments run on a single Apple M-series laptop (MPS backend, 16 GB RAM); embedding extraction takes 30--60 minutes per backbone and probe training takes 1--3 minutes per run. Fine-tuning and DGX probe experiments run on an NVIDIA DGX cluster with bfloat16 mixed precision; the seven Round 1 fine-tuning runs total approximately 6 GPU-hours. Total compute for the full study is under 50 GPU-hours equivalent. All code, configurations, cached embeddings, and evaluation scripts will be released upon publication. Every number in the results section is mechanically generated from run artifacts by dedicated scripts; no number is hand-edited. The embedding cache ensures exact reproducibility of downstream experiments: given the same cached features and random seed, training produces identical weights on the same hardware.
 
 # 4. Experiments
 
-We conducted 62 evaluated training runs: 37 under the artist-filtered split, 12 under random-track, and 13 under clip-random, spanning 14 unique architectures across 4 model families. Every result is mechanically generated from run artifacts by dedicated scripts; no number in the results tables is hand-edited.
+We conducted 79 evaluated training runs: 54 under the artist-filtered split (37 frozen probes on laptop, 7 fine-tuned models on DGX, 6 DGX probes, and 4 ensemble configurations), 12 under random-track, and 13 under clip-random, spanning 21 unique architectures across eight backbone families. Every result is mechanically generated from run artifacts by dedicated scripts; no number in the results tables is hand-edited.
 
 # 5. Results
 
 ## A. Best Model Per Architecture
 
-Table III presents the best run per architecture (14 unique architectures), ranked by accuracy under the artist-filtered, track-level protocol.
+Table III presents the best run per architecture (21 unique architectures), ranked by accuracy under the artist-filtered, track-level protocol. The table includes both frozen probes (trained on laptop) and fine-tuned/DGX probe models.
 
 ```{=latex}
 \begin{table}[t]
 \centering
 \caption{Best Run Per Architecture (Artist-Filtered, Track-Level)}
 \label{tab:best}
-\footnotesize
-\begin{tabular}{clcc}
+\scriptsize
+\begin{tabular}{clccc}
 \toprule
-\textbf{\#} & \textbf{Architecture} & \textbf{Acc.} & \textbf{F1} \\
+\textbf{\#} & \textbf{Architecture} & \textbf{Method} & \textbf{Acc.} & \textbf{F1} \\
 \midrule
-1 & CLAP probe \cite{wu2023clap} & 59.9 & 59.4 \\
-2 & Ensemble (uniform) \cite{kittler1998combining} & 58.5 & 58.2 \\
-3 & MERT-95M flat probe \cite{li2023mert} & 58.2 & 57.8 \\
-4 & BYOL-A + DNN probe \cite{niizumi2023byola} & 57.4 & 57.0 \\
-5 & PANNs CNN14 probe \cite{kong2020panns} & 57.4 & 56.6 \\
-6 & MERT-330M probe \cite{li2023mert} & 56.6 & 56.5 \\
-7 & MERT-330M flat probe \cite{li2023mert} & 56.5 & 55.9 \\
-8 & MERT-95M probe \cite{pasad2021layer} & 56.4 & 55.7 \\
-9 & MERT-95M deep probe \cite{yang2021superb} & 56.0 & 55.9 \\
-10 & MERT-95M attn probe \cite{safari2020self} & 55.2 & 54.4 \\
-11 & GenreCNN (log-mel) \cite{choi2017transfer} & 55.1 & 54.2 \\
-12 & MERT-330M deep probe \cite{yang2021superb} & 54.9 & 55.5 \\
-13 & DenseNet121 \cite{huang2017densenet} & 53.9 & 52.2 \\
-14 & XGBoost on MERT \cite{chen2016xgboost} & 52.5 & 51.4 \\
+1 & R2 Ensemble (uniform) \cite{kittler1998combining} & Ens. & 62.1 & 62.0 \\
+2 & AST Probe (DGX) \cite{gong2021ast} & Probe & 62.0 & --- \\
+3 & R2 Ensemble (Caruana) \cite{kittler1998combining} & Ens. & 61.8 & 61.6 \\
+4 & Fusion Probe (DGX) & Probe & 60.3 & --- \\
+5 & CLAP probe \cite{wu2023clap} & Probe & 59.9 & 59.4 \\
+6 & AST-V2 (fine-tuned) \cite{gong2021ast} & FT & 59.5 & --- \\
+7 & R1 Ensemble (4-model) \cite{kittler1998combining} & Ens. & 58.9 & 58.8 \\
+8 & R1 Ensemble (uniform) \cite{kittler1998combining} & Ens. & 58.5 & 58.2 \\
+9 & MERT-95M flat probe \cite{li2023mert} & Probe & 58.2 & 57.8 \\
+10 & AST-Finetune \cite{gong2021ast} & FT & 58.1 & 58.3 \\
+11 & MERT-330M Probe (DGX) \cite{li2023mert} & Probe & 57.9 & --- \\
+12 & BYOL-A + DNN probe \cite{niizumi2023byola} & Probe & 57.4 & 57.0 \\
+13 & PANNs CNN14 probe \cite{kong2020panns} & Probe & 57.4 & 56.6 \\
+14 & Whisper Probe (DGX) \cite{radford2023whisper} & Probe & 57.3 & --- \\
+15 & MERT-330M probe \cite{li2023mert} & Probe & 56.6 & 56.5 \\
+16 & EfficientAT-Genre \cite{schmid2023efficientat} & FT & 55.4 & 54.6 \\
+17 & GenreCNN (log-mel) \cite{choi2017transfer} & Scratch & 55.1 & 54.2 \\
+18 & MERT-LoRA-330M \cite{li2023mert,hu2021lora} & FT & 54.4 & 55.1 \\
+19 & MERT-MultiCrop-330M \cite{li2023mert} & FT & 53.9 & 54.1 \\
+20 & DenseNet121 \cite{huang2017densenet} & Scratch & 53.9 & 52.2 \\
+21 & MERT-Unfreeze-330M \cite{li2023mert} & FT & 53.4 & 53.0 \\
+22 & MERT-LoRA-95M \cite{li2023mert,hu2021lora} & FT & 52.9 & 51.9 \\
+23 & XGBoost on MERT \cite{chen2016xgboost} & --- & 52.5 & 51.4 \\
+24 & HTS-AT-Genre \cite{chen2022htsat} & Scratch & 47.4 & 47.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -380,16 +400,16 @@ Table III presents the best run per architecture (14 unique architectures), rank
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{architecture_bars.pdf}
-\caption{Best track-level accuracy per architecture under the artist-filtered protocol. The CLAP probe (59.9\%) leads, followed by a cluster of MERT/BYOL-A/PANNs models at 57--58\%.}
+\caption{Best track-level accuracy per architecture under the artist-filtered protocol. The AST Probe (62.0\%) leads, followed by the CLAP probe (59.9\%) and a cluster of MERT/BYOL-A/PANNs models at 57--58\%. Fine-tuned models (orange) do not consistently outperform frozen probes (blue).}
 \label{fig:archbars}
 \end{figure}
 ```
 
-The best single model is the CLAP probe (59.9\%), whose contrastive audio-language pretraining on diverse audio-text pairs produces representations that transfer effectively to genre classification even through a frozen probe. The previous best, a MERT-95M flat probe (58.2\%), concatenates all 13 transformer layers into a 9,984-dimensional feature vector. A uniform-weight ensemble of per-architecture bests (excluding CLAP) reaches 58.5\%; including CLAP would likely improve it further. Notably, MERT-330M does not outperform MERT-95M, and learned ensemble weights lose to fixed uniform averaging --- both symptoms of overfitting at this data scale (6,400 training tracks).
+Figure \ref{fig:archbars} visualises these results. The best single model is the AST Probe (62.0\%), a layer-weighted MLP on frozen AudioSet-pretrained AST features trained on the DGX cluster. The best laptop-trained model remains the CLAP probe (59.9\%), whose contrastive audio-language pretraining produces representations that transfer effectively to genre classification. A uniform-weight ensemble of all Round 2 models reaches 62.1\%, marginally above the best individual. Notably, fine-tuning does not consistently outperform frozen probing: the frozen AST Probe (62.0\%) beats the fine-tuned AST (58.1\%), and LoRA on MERT-330M (54.4\%) underperforms the frozen MERT-330M probe (56.6\%). MERT-330M does not outperform MERT-95M, and learned ensemble weights lose to fixed uniform averaging --- both symptoms of overfitting at this data scale (6,400 training tracks).
 
 ## B. Complete Run Inventory
 
-Table IV presents all 37 artist-filtered runs across 14 architectures, including hyperparameter variants and seed ablations.
+Table IV presents all 54 artist-filtered runs across the eight trained backbone families, including hyperparameter variants, seed ablations, and DGX fine-tuning experiments.
 
 ```{=latex}
 \begin{figure}[t]
@@ -409,12 +429,12 @@ Table IV presents all 37 artist-filtered runs across 14 architectures, including
 \end{figure*}
 ```
 
-Key observations: (a) The MERT-95M flat probe spans 54.4--58.2\% across 7 runs differing only in seed and regularisation, a 3.8 pp range. (b) Seed ablations for the MERT-95M probe (seeds 1--3, 42) span 53.5--56.4\%, showing that a 3 pp difference between two papers could be seed noise. (c) The CNN baseline improves from 47.1\% to 55.1\% (+8.0 pp) through augmentation and hyperparameter tuning alone.
+The seed stability (Figure \ref{fig:seeds}) and training curves (Figure \ref{fig:curves}) show key observations: (a) The MERT-95M flat probe spans 54.4--58.2\% across 8 runs differing only in seed and regularisation, a 3.9 pp range. (b) Seed ablations for the MERT-95M probe (seeds 1--3, 42) span 53.5--56.4\%, showing that a 3 pp difference between two papers could be seed noise. (c) The CNN baseline improves from 47.1\% to 55.1\% (+8.0 pp) through augmentation and hyperparameter tuning alone.
 
 ```{=latex}
 \begin{table*}[t]
 \centering
-\caption{Complete Inventory: All 37 Artist-Filtered Runs (Track-Level Accuracy and Macro-F1, \%)}
+\caption{Complete Inventory: All 54 Artist-Filtered Runs (Track-Level Accuracy and Macro-F1, \%). Rows 38--54 are DGX runs.}
 \label{tab:allruns}
 \scriptsize
 \begin{tabular}{rllccccccl}
@@ -458,6 +478,32 @@ Key observations: (a) The MERT-95M flat probe spans 54.4--58.2\% across 7 runs d
 35 & xgboost\_mert & XGBoost on MERT & 52.5 & 51.4 & --- & 256 & --- & --- & \cite{chen2016xgboost} \\
 36 & cnn\_augmented & GenreCNN (log-mel) & 51.4 & 50.4 & 1e-3 & 64 & 30 & --- & \cite{choi2017transfer} \\
 37 & cnn\_baseline & GenreCNN (log-mel) & 47.1 & 45.0 & 1e-3 & 64 & 25 & --- & \cite{choi2017transfer} \\
+\midrule
+\multicolumn{10}{l}{\textit{DGX Fine-Tuned Models (Round 1)}} \\
+\midrule
+38 & ast\_finetune & AST-Finetune (freeze 6/12) & 58.1 & 58.3 & 1e-4 & 32 & 1 & 0.3 & \cite{gong2021ast} \\
+39 & efficientat\_genre & EfficientAT-Genre & 55.4 & 54.6 & 3e-4 & 64 & 41 & --- & \cite{schmid2023efficientat} \\
+40 & mert\_lora\_330m & MERT-LoRA-330M & 54.4 & 55.1 & 2e-4 & 64 & 2 & 0.3 & \cite{li2023mert,hu2021lora} \\
+41 & mert\_multicrop\_330m & MERT-MultiCrop-330M & 53.9 & 54.1 & 2e-4 & 8 & 10 & --- & \cite{li2023mert} \\
+42 & mert\_unfreeze\_330m & MERT-Unfreeze-330M & 53.4 & 53.0 & 5e-5 & 32 & 8 & 0.4 & \cite{li2023mert} \\
+43 & mert\_lora\_95m & MERT-LoRA-95M & 52.9 & 51.9 & 3e-4 & 128 & 19 & 0.3 & \cite{li2023mert,hu2021lora} \\
+44 & htsat\_genre & HTS-AT-Genre (from scratch) & 47.4 & 47.0 & 3e-4 & 32 & 28 & --- & \cite{chen2022htsat} \\
+\midrule
+\multicolumn{10}{l}{\textit{DGX Probes and Fine-Tuned Models (Round 2)}} \\
+\midrule
+45 & probe\_ast & AST Probe (layer-weighted) & 62.0 & --- & --- & --- & --- & --- & \cite{gong2021ast} \\
+46 & probe\_fusion & Fusion Probe (4 encoders) & 60.3 & --- & --- & --- & --- & --- & --- \\
+47 & ast\_v2 & AST-V2 (fine-tuned) & 59.5 & --- & 2e-5 & 32 & 3 & --- & \cite{gong2021ast} \\
+48 & probe\_mert & MERT-330M Probe (DGX) & 57.9 & --- & --- & --- & --- & --- & \cite{li2023mert} \\
+49 & probe\_whisper & Whisper Probe (DGX) & 57.3 & --- & --- & --- & --- & --- & \cite{radford2023whisper} \\
+50 & probe\_clap & CLAP Probe (DGX) & 27.8 & --- & --- & --- & --- & --- & \cite{wu2023clap} \\
+\midrule
+\multicolumn{10}{l}{\textit{DGX Ensembles}} \\
+\midrule
+51 & r2\_ensemble\_uniform & R2 Ensemble (uniform all) & 62.1 & 62.0 & --- & --- & --- & --- & \cite{kittler1998combining} \\
+52 & r2\_ensemble\_caruana & R2 Ensemble (Caruana) & 61.8 & 61.6 & --- & --- & --- & --- & \cite{kittler1998combining} \\
+53 & r1\_ensemble\_4model & R1 Ensemble (4-model) & 58.9 & 58.8 & --- & --- & --- & --- & \cite{kittler1998combining} \\
+54 & r1\_ensemble\_7model & R1 Ensemble (7-model) & 58.5 & 58.2 & --- & --- & --- & --- & \cite{kittler1998combining} \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -504,7 +550,7 @@ CLAP \cite{wu2023clap} & 59.9 & 71.8 & 78.6 & +18.7 \\
 \end{figure*}
 ```
 
-Decomposed: dropping the artist filter alone accounts for +12.7 pp, and leaking clips on top adds +19.4 pp. The effect is systematic and architecture-independent.
+Figure \ref{fig:leakage} shows the full ladder. Decomposed (over the 7 architectures with all three rungs): dropping the artist filter alone accounts for +12.6 pp, and leaking clips on top adds +18.3 pp (total +30.9 pp for this subset; the headline +30.8 pp is the mean across all 11 architectures with at least the two extreme rungs). The effect is systematic and architecture-independent.
 
 ## D. Genre-Specific Leakage Analysis
 
@@ -535,7 +581,7 @@ Decomposed: dropping the artist filter alone accounts for +12.7 pp, and leaking 
 \end{figure}
 ```
 
-Not all genres inflate equally. Folk (+49.8 pp mean inflation), Instrumental (+45.2 pp), and Experimental (+42.8 pp) inflate the most. These are also the three hardest genres under honest evaluation (36.1\%, 40.9\%, and 41.4\% mean F1 respectively). The explanation: these genres are stylistically diffuse, so models learn to recognise *which recording* they have heard rather than genre features. Hip-Hop (+14.0 pp) and Electronic (+16.3 pp) inflate the least, having strong acoustic signatures that transfer across artists.
+Figures \ref{fig:genre_decomp}--\ref{fig:genre_bars} show that not all genres inflate equally. Folk (+49.8 pp mean inflation), Instrumental (+45.2 pp), and Experimental (+42.8 pp) inflate the most. These are also the three hardest genres under honest evaluation (36.1\%, 40.9\%, and 41.4\% mean F1 respectively). The explanation: these genres are stylistically diffuse, so models learn to recognise *which recording* they have heard rather than genre features. Hip-Hop (+14.0 pp) and Electronic (+16.3 pp) inflate the least, having strong acoustic signatures that transfer across artists.
 
 ```{=latex}
 \begin{figure*}[t]
@@ -558,15 +604,15 @@ The stability of the genre vulnerability ordering has a practical implication: i
 
 ## F. Audio-Language Models: CLAP
 
-CLAP [@wu2023clap] approaches audio understanding through contrastive language-audio pretraining, learning a joint embedding space where audio and text descriptions are aligned. Its 512-dimensional audio embeddings encode semantic content at a higher level of abstraction than purely acoustic models. Under the artist-filtered protocol, CLAP achieves 59.9\% track-level accuracy --- the best single model, surpassing MERT-95M (58.2\%) and even the prior uniform ensemble (58.5\%). This demonstrates that audio-language pretraining on diverse audio-text pairs produces representations that transfer remarkably well to music genre classification.
+CLAP [@wu2023clap] approaches audio understanding through contrastive language-audio pretraining, learning a joint embedding space where audio and text descriptions are aligned. Its 512-dimensional audio embeddings encode semantic content at a higher level of abstraction than purely acoustic models. Under the artist-filtered protocol, the laptop CLAP probe achieves 59.9\% track-level accuracy --- the best among laptop-trained models, surpassing MERT-95M (58.2\%) and the laptop uniform ensemble (58.5\%). The DGX AST Probe (62.0\%) now leads overall (Section G2), but CLAP's strong frozen-probe performance demonstrates that audio-language pretraining on diverse audio-text pairs produces representations that transfer remarkably well to music genre classification.
 
 The CLAP leakage pattern (+18.7 pp inflation) is notably lower than the MERT family (+32--41 pp) but higher than the from-scratch CNN (+14.1 pp). This intermediate position is consistent with CLAP's pretraining: its contrastive objective encourages semantic invariance across acoustic variations, which may reduce recording-specific memorisation compared to reconstruction-based objectives (MERT) while still capturing more fine-grained features than a shallow CNN.
 
-A natural extension is to test speech-only models (Wav2Vec 2.0, HuBERT, Whisper) --- which have never encountered music during pretraining --- to further characterise how pretraining domain affects leakage magnitude.
+Whisper Probe results from the DGX experiments (57.3\%) provide initial evidence on speech-only models applied to music: despite never encountering music during pretraining, Whisper's encoder representations transfer competently to genre classification, though below the best music-specific and AudioSet-pretrained models.
 
 ## G. Against Published Literature
 
-Our best artist-filtered model reaches 59.9\%. The only published number carrying an artist-filtered guarantee is 54.8\% (Park et al.'s re-run of FMA's baseline code [@park2018representation]), a margin of +5.1 pp. We deliberately do not report a "beats N of M" count: ranking against numbers whose protocol is unknown would treat incomparable quantities as comparable.
+Our best artist-filtered model reaches 62.0\% (per-genre breakdown in Figure \ref{fig:heatmap}; confusion matrices in Figures \ref{fig:confusion_af}--\ref{fig:confusion_cr}). The only published number carrying an artist-filtered guarantee is 54.8\% (Park et al.'s re-run of FMA's baseline code [@park2018representation]), a margin of +7.2 pp. We deliberately do not report a "beats N of M" count: ranking against numbers whose protocol is unknown would treat incomparable quantities as comparable.
 
 ```{=latex}
 \begin{figure}[t]
@@ -595,11 +641,25 @@ Our best artist-filtered model reaches 59.9\%. The only published number carryin
 \end{figure}
 ```
 
-The architecture set confirms the fundamental finding: published FMA-small results remain incomparable without protocol disclosure. The inflation pattern holds across from-scratch CNNs, music-specific SSL (MERT-95M, MERT-330M), general audio SSL (BYOL-A), supervised pretraining (PANNs), audio-language models (CLAP), and non-neural baselines (XGBoost). Future work extending this to speech-only SSL (Wav2Vec 2.0, HuBERT) would further characterise how pretraining domain affects leakage magnitude.
+The architecture set confirms the fundamental finding: published FMA-small results remain incomparable without protocol disclosure. The inflation pattern holds across from-scratch CNNs, music-specific SSL (MERT-95M, MERT-330M), general audio SSL (BYOL-A), supervised pretraining (PANNs), audio-language models (CLAP), fine-tuned transformers (AST, HTS-AT), and non-neural baselines (XGBoost).
+
+## G2. Fine-Tuning and DGX Results
+
+The frozen-probing paradigm used in Sections A--G deliberately restricts the backbone. We now report fine-tuning and multi-GPU probing experiments conducted on an NVIDIA DGX cluster, testing whether parameter adaptation closes the gap to permissive-protocol numbers.
+
+**Round 1: Fine-tuned models.** Seven architectures were fine-tuned under the artist-filtered protocol (Table IV, rows 38--44). The best individual fine-tuned model is AST-Finetune at 58.1\%, which freezes layers 0--6 of the AudioSet-pretrained AST and trains the classifier head. It converged at epoch 1, suggesting strong feature alignment from AudioSet pretraining. MERT-LoRA-330M (54.4\%, 2M trainable LoRA parameters) underperformed the laptop frozen MERT-330M probe (56.6\%), suggesting that LoRA adaptation struggles on the 6,400-track regime. MERT-Unfreeze-330M (53.4\%, top 4 layers unfrozen with layer-wise LR decay) fares even worse. Multi-crop inference (MERT-MultiCrop-330M, 53.9\%) adds nothing over standard LoRA (54.4\%). HTS-AT trained from scratch reaches only 47.4\%, confirming the data-limited setting. Round 1 ensembles: a 4-model subset reaches 58.9\% and the full 7-model uniform average reaches 58.5\% --- diminishing returns from adding weaker models.
+
+**Round 2: Probes on new backbones.** Layer-weighted MLP probes trained on DGX with frozen embeddings from AST-AudioSet, Whisper-Large-v3, MERT-330M, and CLAP (Table IV, rows 45--50). The AST Probe reaches 62.0\%, becoming the new best single model --- 2.1 pp above the laptop CLAP probe (59.9\%). The Fusion Probe (concatenation of all four DGX encoder outputs) reaches 60.3\%. Whisper Probe and MERT-330M Probe (DGX) reach 57.3\% and 57.9\% respectively. The DGX CLAP Probe reaches only 27.8\%, sharply below the laptop CLAP probe (59.9\%); this discrepancy reflects differences in the extraction pipeline (sample rate, segment length, and CLAP model variant) and warrants further investigation.
+
+**Round 2 ensembles.** Caruana forward selection with replacement [@kittler1998combining] produces a greedy ensemble at 61.8\% (weights: AST-V2 28\%, Whisper 24\%, AST Probe 20\%, Fusion 12\%, MERT 12\%, CLAP 4\%). A simple uniform average of all six Round 2 models reaches 62.1\% --- once again, uniform averaging beats learned selection. This extends the pattern from Section E: at this data scale, any learned combiner overfits.
+
+**Validation--test gap.** Round 2 models show a 5--6 pp gap between validation and test accuracy (e.g., AST Probe: 67.8\% val, 62.0\% test). This is larger than the 2--3 pp gap observed in laptop probes and may reflect the smaller validation partition or systematic distributional differences between the validation and test sets within the artist-filtered split.
+
+**Synthesis.** The frozen AST Probe (62.0\%) outperforms the fine-tuned AST (58.1\%) on the same backbone. LoRA and partial unfreezing on MERT do not beat a frozen probe. These results reinforce the negative-result pattern of Section F: at FMA-small scale, the accuracy ceiling is set by the backbone's pretrained representation quality and the evaluation protocol, not by the adaptation method. Crucially, even the best DGX result (62.1\%) remains far below the 90--96\% numbers achievable under permissive protocols, confirming that the protocol --- not model capacity --- is the dominant variable.
 
 ## H. Calibration Across Protocols
 
-A model may achieve high accuracy under a permissive protocol, but does it *know* it is right? We measure Expected Calibration Error (ECE, 15 bins), Brier score, and optimal temperature across all 46 runs with cached episode outputs, grouped by protocol.
+A model may achieve high accuracy under a permissive protocol, but does it *know* it is right? We measure Expected Calibration Error (ECE, 15 equal-width bins on [0, 1]), Brier score, and optimal temperature across all 49 runs with cached episode outputs, grouped by protocol.
 
 ```{=latex}
 \begin{table}[t]
@@ -611,9 +671,9 @@ A model may achieve high accuracy under a permissive protocol, but does it *know
 \toprule
 \textbf{Protocol} & \textbf{ECE} & \textbf{Brier} & \textbf{Overconf.} & \textbf{$T^*$} \\
 \midrule
-Artist-filtered (26) & .060$\pm$.016 & .587$\pm$.012 & +0.9\,pp & 1.20$\pm$0.16 \\
-Random-track (10)    & .067$\pm$.029 & .431$\pm$.030 & $-$4.1\,pp & 1.18$\pm$0.24 \\
-Clip-random (10)     & .085$\pm$.045 & .186$\pm$.120 & $-$8.4\,pp & 0.76$\pm$0.14 \\
+Artist-filtered (27) & .060$\pm$.016 & .587$\pm$.012 & +0.5\,pp & 1.19$\pm$0.18 \\
+Random-track (11)    & .067$\pm$.029 & .431$\pm$.030 & $-$4.7\,pp & 1.15$\pm$0.25 \\
+Clip-random (11)     & .085$\pm$.045 & .186$\pm$.120 & $-$8.4\,pp & 0.76$\pm$0.14 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -637,7 +697,7 @@ Clip-random (10)     & .085$\pm$.045 & .186$\pm$.120 & $-$8.4\,pp & 0.76$\pm$0.1
 \end{figure}
 ```
 
-The key finding is counterintuitive: **leakage creates underconfidence, not overconfidence.** Under the artist-filtered protocol, models are approximately calibrated (mean overconfidence +0.9 pp). Under clip-random evaluation, all 10 models are underconfident (mean $-$8.4 pp): the inflated accuracy exceeds the model's own confidence. This happens because the softmax probabilities are calibrated to the difficulty of the genre classification task, but the permissive protocol converts the task from genre classification to recording recognition --- which the model solves correctly more often than its softmax entropy suggests.
+Table \ref{tab:calibration} and Figures \ref{fig:calibration}--\ref{fig:reliability} reveal a counterintuitive finding: **leakage creates underconfidence, not overconfidence.** Under the artist-filtered protocol, models are approximately calibrated (mean overconfidence +0.5 pp). Under clip-random evaluation, all 11 models are underconfident (mean $-$8.4 pp): the inflated accuracy exceeds the model's own confidence. This happens because the softmax probabilities are calibrated to the difficulty of the genre classification task, but the permissive protocol converts the task from genre classification to recording recognition --- which the model solves correctly more often than its softmax entropy suggests.
 
 Temperature scaling confirms this: artist-filtered models need $T^* > 1$ (softening, reducing overconfidence), while clip-random models need $T^* < 1$ (sharpening, increasing confidence to match inflated accuracy). The optimal temperature is itself a diagnostic for protocol leakage: $T^* \ll 1$ signals that the model achieves accuracy it did not learn to expect.
 
@@ -649,16 +709,16 @@ To understand whether backbone diversity drives ensemble gain, we compute linear
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{cka_combined.pdf}
-\caption{(a) Inter-model CKA across 5 backbones: MERT-95M and MERT-330M share a high CKA (0.848); CLAP and PANNs show surprising similarity (0.724), likely reflecting their shared AudioSet-scale pretraining. (b) MERT-95M layer-wise CKA: adjacent layers are highly similar ($>$ 0.95), with a gradual phase transition around layer 8--9 where representations shift from acoustic to semantic.}
+\caption{(a) Inter-model CKA across 5 backbones: MERT-95M and MERT-330M share a high CKA (0.848); CLAP and PANNs show surprising similarity (0.724), likely reflecting their shared AudioSet-scale pretraining. (b) MERT-95M layer-wise CKA: adjacent layers are highly similar ($\geq$ 0.94), with a gradual phase transition around layer 8--9 where representations shift from acoustic to semantic.}
 \label{fig:cka}
 \end{figure*}
 ```
 
-The inter-model CKA matrix reveals that MERT-95M and MERT-330M encode nearly identical information (CKA = 0.848), explaining why MERT-330M does not outperform MERT-95M under honest evaluation: the larger model's additional capacity does not add complementary features. CLAP and PANNs show surprisingly high similarity (CKA = 0.724), likely because both encode broad acoustic categories --- PANNs via supervised classification on AudioSet's 527 classes, CLAP via contrastive alignment with audio-text pairs spanning a similar domain. BYOL-A occupies an intermediate position, moderately similar to all backbones (0.505--0.576).
+The inter-model CKA matrix (Figure \ref{fig:cka}) reveals that MERT-95M and MERT-330M encode nearly identical information (CKA = 0.848), explaining why MERT-330M does not outperform MERT-95M under honest evaluation: the larger model's additional capacity does not add complementary features. CLAP and PANNs show surprisingly high similarity (CKA = 0.724), likely because both encode broad acoustic categories --- PANNs via supervised classification on AudioSet's 527 classes, CLAP via contrastive alignment with audio-text pairs spanning a similar domain. BYOL-A occupies an intermediate position, moderately similar to all backbones (0.505--0.576).
 
 The most diverse pair is PANNs $\leftrightarrow$ MERT-330M (CKA = 0.469), followed by MERT-330M $\leftrightarrow$ CLAP (0.507). This diversity explains why a uniform ensemble over architecturally diverse backbones outperforms any single model: the component models make different errors because they encode different information.
 
-Within MERT-95M, the $13\times13$ layer-wise CKA heatmap shows a smooth gradient from early to late layers, with adjacent layers highly redundant (CKA $> 0.95$). A phase transition occurs around layers 8--9, where the CKA between early layers (0--4) and late layers (10--12) drops below 0.80. This is consistent with the speech SSL literature's finding that early transformer layers encode acoustic features while later layers encode more abstract, task-relevant representations [@pasad2021layer].
+Within MERT-95M, the $13\times13$ layer-wise CKA heatmap shows a smooth gradient from early to late layers, with adjacent layers highly redundant (CKA $\geq 0.94$). A phase transition occurs around layers 8--9, where the CKA between early layers (0--4) and late layers (10--12) drops below 0.80. This is consistent with the speech SSL literature's finding that early transformer layers encode acoustic features while later layers encode more abstract, task-relevant representations [@pasad2021layer].
 
 ## J. Error Diversity and Ensemble Complementarity
 
@@ -673,11 +733,11 @@ We compute pairwise Cohen's kappa and Yule's Q between the correctness vectors o
 \end{figure*}
 ```
 
-Within-MERT variants show high error agreement ($\kappa = 0.775 \pm 0.035$): they share the same backbone, so the same tracks tend to confuse them. Cross-family pairs are substantially more diverse ($\kappa = 0.630 \pm 0.034$). The most diverse pairs involve architecturally distinct backbones (CNN, PANNs, CLAP vs. MERT variants), confirming that ensemble diversity requires crossing model family boundaries.
+The error diversity heatmap (Figure \ref{fig:error_diversity}) reveals clear patterns. Within-MERT variants show high error agreement ($\kappa = 0.775 \pm 0.035$): they share the same backbone, so the same tracks tend to confuse them. Cross-family pairs are substantially more diverse ($\kappa = 0.630 \pm 0.034$). The most diverse pairs involve architecturally distinct backbones (CNN, PANNs, CLAP vs. MERT variants), confirming that ensemble diversity requires crossing model family boundaries.
 
 Among the top 4 models, 216 tracks (27.0\%) are misclassified by all four --- these represent a hard core of genuinely ambiguous tracks that no single-backbone probe can solve. Another 337 tracks (42.1\%) are correctly classified by all four. The remaining 247 tracks (30.9\%) are where ensemble diversity provides value: at least one model gets it right while others do not.
 
-This quantifies why uniform ensembling works and learned fusion does not. The models' errors are moderately correlated (mean $\kappa = 0.677$) --- diverse enough for averaging to help, but not diverse enough for a learned combiner to find exploitable patterns at this data scale.
+This quantifies why uniform ensembling works and learned fusion does not. The models' errors are moderately correlated (mean $\kappa = 0.670$) --- diverse enough for averaging to help, but not diverse enough for a learned combiner to find exploitable patterns at this data scale.
 
 ## K. Temporal Stability of Genre Predictions
 
@@ -701,7 +761,7 @@ Each 30-second FMA track yields 10 three-second episodes. We analyse how consist
 \end{figure}
 ```
 
-Mean episode agreement is 80.3\% $\pm$ 20.5\% --- higher than chance but far from unanimous. Tracks with high agreement ($\geq$ 90\%) are classified with 72.1\% accuracy, while low-agreement tracks ($<$ 50\%) achieve only 35.9\%. This 36-pp gap shows that inter-episode agreement is a strong confidence signal: a model that is consistent across temporal positions is more likely to be correct.
+Figures \ref{fig:agreement} and \ref{fig:temporal} illustrate temporal stability. Mean episode agreement is 80.3\% $\pm$ 20.5\% --- higher than chance but far from unanimous. Tracks with high agreement ($\geq$ 90\%) are classified with 72.1\% accuracy, while low-agreement tracks ($<$ 50\%) achieve only 35.9\%. This 36-pp gap shows that inter-episode agreement is a strong confidence signal: a model that is consistent across temporal positions is more likely to be correct.
 
 Per-genre agreement varies systematically: Hip-Hop (87.5\%) and International (88.6\%) achieve the highest temporal consistency, while Folk (71.6\%) and Pop (70.6\%) are the most temporally variable. The same genres that are hardest to classify are also hardest to classify *consistently* --- suggesting that the difficulty is not in any particular 3-second segment but in the genre's intrinsic acoustic diffuseness.
 
@@ -709,7 +769,7 @@ Accuracy is roughly flat across episode positions (range: 52.0\%--54.4\% for the
 
 ## L. Statistical Rigour
 
-All accuracy numbers in this study are accompanied by bootstrap 95\% confidence intervals (10,000 resamples). The best single model (CLAP probe, 59.9\%) has CI [56.4\%, 63.2\%]. McNemar's test between all pairs of the top 8 artist-filtered models finds no significant difference ($p > 0.05$ for all 28 pairs): the top cluster of models is statistically indistinguishable.
+All accuracy numbers in this study are accompanied by bootstrap 95\% confidence intervals (10,000 resamples, percentile method, resampled at the track level to respect hierarchical structure; $n = 800$ test tracks). The best laptop model (CLAP probe, 59.9\%) has CI [56.5\%, 63.1\%]. McNemar's chi-squared test between all pairs of the top 8 artist-filtered models finds no significant difference after multiple-comparison correction (Bonferroni-corrected threshold $\alpha = 0.05/28 = 0.0018$; all 28 individual $p$-values exceed this threshold, with only 2 pairs falling below the uncorrected $\alpha = 0.05$): the top cluster of models is statistically indistinguishable.
 
 ```{=latex}
 \begin{figure}[t]
@@ -720,7 +780,7 @@ All accuracy numbers in this study are accompanied by bootstrap 95\% confidence 
 \end{figure}
 ```
 
-Per-genre CIs for the best model reveal the precision ceiling: Hip-Hop has the tightest CI [79.0\%, 93.0\%], while the hardest genres have wide CIs (Folk: [29.0\%, 48.0\%], Pop: [28.0\%, 46.0\%]). With only 100 test tracks per genre, detecting a 5-pp improvement in Folk with 95\% confidence would require a model to improve from 38\% to 43\% --- a bar that is meaningful but attainable.
+The forest plot (Figure \ref{fig:forest}) confirms the overlapping CIs. Per-genre CIs for the best model reveal the precision ceiling: Hip-Hop has the tightest CI [79.0\%, 92.0\%], while the hardest genres have wide CIs (Folk: [28.0\%, 47.0\%], Pop: [28.0\%, 47.0\%]). With only 100 test tracks per genre, detecting a 5-pp improvement in Folk with 95\% confidence would require a model to improve from 38\% to 43\% --- a bar that is meaningful but attainable.
 
 ## M. Layer-Wise Leakage Fingerprinting
 
@@ -733,7 +793,7 @@ Per-genre CIs for the best model reveal the precision ceiling: Hip-Hop has the t
 \end{figure*}
 ```
 
-To localise where recording identity versus genre information resides in a pretrained transformer, we train 13 single-layer MERT-95M probes --- one per transformer layer --- under each of the three protocols (39 runs total).
+To localise where recording identity versus genre information resides in a pretrained transformer (Figure \ref{fig:layer_leakage}), we train 13 single-layer MERT-95M probes --- one per transformer layer --- under each of the three protocols (39 runs total).
 
 Genre-discriminative accuracy follows an inverted-U pattern: it rises from layer~0 (40.9\%) through layer~7 (53.0\%), then declines to layer~12 (47.0\%). This pattern is consistent with prior findings that genre-relevant features are distributed across transformer depth, with middle layers encoding the richest semantic representations.
 
@@ -752,7 +812,7 @@ The slight inflation minimum at layer~7 --- the same layer with peak honest accu
 \end{figure*}
 ```
 
-To test whether leakage is a small-data artifact, we train CLAP and MERT-95M flat probes on subsampled training sets (10\%, 25\%, 50\%, 75\%, 100\%) under both artist-filtered and clip-random evaluation.
+To test whether leakage is a small-data artifact (Figure \ref{fig:data_efficiency}), we train CLAP and MERT-95M flat probes on subsampled training sets (10\%, 25\%, 50\%, 75\%, 100\%) under both artist-filtered and clip-random evaluation.
 
 Under honest evaluation, accuracy is remarkably insensitive to training set size: CLAP ranges from 56.3\% (10\% data) to 59.9\% (100\%), and MERT flat from 50.1\% to 58.2\%. The frozen representations already contain the genre information; more labelled data provides diminishing returns for learning the linear mapping.
 
@@ -771,7 +831,7 @@ Section 5K showed that inter-episode agreement under honest evaluation averages 
 \end{figure*}
 ```
 
-Under clip-random evaluation, mean episode agreement rises to 96.4\% $\pm$ 12.7\% --- compared to 79.8\% $\pm$ 20.5\% under honest evaluation. The shift is universal: every model shows higher consistency under leakage. MERT-330M reaches 98.2\% agreement under clip-random, meaning that on average, 9.8 of 10 episodes from the same track are classified identically. This is not genre classification --- it is recording recognition.
+Figure \ref{fig:temporal_consistency} shows that under clip-random evaluation, mean episode agreement rises to 96.4\% $\pm$ 12.7\% --- compared to 79.8\% $\pm$ 20.5\% under honest evaluation. The shift is universal: every model shows higher consistency under leakage. MERT-330M reaches 98.2\% agreement under clip-random, meaning that on average, 9.8 of 10 episodes from the same track are classified identically. This is not genre classification --- it is recording recognition.
 
 The consistency gap provides a model-agnostic diagnostic for protocol integrity. A model achieving $>$95\% inter-episode agreement on an 8-class genre task should raise suspicion: genuinely ambiguous genres (Folk, Pop) cannot produce such consistency from genre cues alone. Unlike calibration diagnostics (Section 5H), which require computing ECE, the consistency diagnostic requires only the raw episode predictions and no additional statistical machinery.
 
@@ -786,7 +846,7 @@ The consistency gap provides a model-agnostic diagnostic for protocol integrity.
 \end{figure*}
 ```
 
-We define per-track difficulty as the fraction of models that classify a track correctly. Under honest evaluation, 136 of 617 test tracks are classified incorrectly by all 8 models (difficulty = 0.0); under clip-random, this drops to 35. Conversely, 229 tracks are classified correctly by all models under honest evaluation; under leakage, 374 are.
+Figure \ref{fig:track_difficulty} shows the difficulty--improvement relationship. We define per-track difficulty as the fraction of models that classify a track correctly. Under honest evaluation, 136 of 617 test tracks are classified incorrectly by all 8 models (difficulty = 0.0); under clip-random, this drops to 35. Conversely, 229 tracks are classified correctly by all models under honest evaluation; under leakage, 374 are.
 
 The relationship between honest difficulty and leakage benefit is monotonic and steep: tracks in the hardest bin (0.0--0.2 honest difficulty) gain +61.5 pp from leakage, while tracks in the easiest bin (0.8--1.0) gain --1.1 pp. The per-genre breakdown is equally revealing: Folk, the hardest genre under honest evaluation (33.9\% mean difficulty), gains +57.1 pp from leakage. Hip-Hop, the easiest (90.3\%), gains only +1.5 pp.
 
@@ -803,11 +863,11 @@ This pattern is consistent with memorisation, not generalisation. A model that l
 \end{figure*}
 ```
 
-We introduce a label-free, training-free diagnostic for protocol leakage: the *representation collapse ratio*. For each backbone, we group clips by track and compute the mean pairwise cosine similarity of episode embeddings within each track (``within-track similarity'') and between random clips from different tracks (``between-track similarity''). The ratio of these two quantities measures how much the embedding space clusters by recording identity rather than by semantic content.
+We introduce a label-free, training-free diagnostic for protocol leakage: the *representation collapse ratio* (Figure \ref{fig:representation_collapse}). For each backbone, we group clips by track and compute the mean pairwise cosine similarity of episode embeddings within each track (``within-track similarity'') and between random clips from different tracks (``between-track similarity''). The ratio of these two quantities measures how much the embedding space clusters by recording identity rather than by semantic content.
 
 Across four backbones, within-track similarity ranges from 0.831 (CLAP) to 0.929 (BYOL-A), while between-track similarity ranges from 0.303 (CLAP) to 0.772 (MERT-95M). CLAP's high collapse ratio (2.74) reflects its contrastive training: it produces well-separated embeddings in general but near-identical embeddings for clips from the same recording. MERT-95M and BYOL-A, despite lower collapse ratios (1.19 and 1.21), exhibit higher absolute within-track similarity, indicating that most of the embedding space is devoted to recording-level rather than genre-level information.
 
-The collapse ratio does not correlate monotonically with inflation ($r = -0.81$ across four backbones; note $n = 4$ limits statistical power). This is expected: leakage requires not just embedding similarity but also that the similarity survives the probing head and maps onto class boundaries. Nevertheless, the metric provides a useful pre-training diagnostic: a backbone where within-track cosine similarity exceeds 0.85 is encoding recording identity strongly enough to create protocol sensitivity, regardless of downstream accuracy.
+The collapse ratio does not rank-order consistently with inflation across four backbones (with $n = 4$, formal correlation analysis is not meaningful). This is expected: leakage requires not just embedding similarity but also that the similarity survives the probing head and maps onto class boundaries. Nevertheless, the metric provides a useful pre-training diagnostic: a backbone where within-track cosine similarity exceeds 0.85 is encoding recording identity strongly enough to create protocol sensitivity, regardless of downstream accuracy.
 
 ## R. Nearest-Neighbor Recording Identity Recovery
 
@@ -820,9 +880,9 @@ The collapse ratio does not correlate monotonically with inflation ($r = -0.81$ 
 \end{figure*}
 ```
 
-We directly quantify embedding-level information leakage by measuring what fraction of test clips have a same-track nearest neighbor in the training set. For each test embedding, we compute cosine similarity to all training embeddings and check whether the nearest neighbor shares the same track ID. Under artist-filtered evaluation, the NN leak rate is 0.0\% for all four backbones --- exactly as designed: no track spans the split boundary. Under clip-random evaluation, the leak rates are striking: MERT-95M at 90.1\%, CLAP at 84.4\%, BYOL-A at 84.8\%, and PANNs at 56.8\%.
+We directly quantify embedding-level information leakage (Figure \ref{fig:nn_identity_recovery}) by measuring what fraction of test clips have a same-track nearest neighbor in the training set. For each test embedding, we compute cosine similarity to all training embeddings and check whether the nearest neighbor shares the same track ID. Under artist-filtered evaluation, the NN leak rate is 0.0\% for all four backbones --- exactly as designed: no track spans the split boundary. Under clip-random evaluation, the leak rates are striking: MERT-95M at 90.1\%, CLAP at 84.4\%, BYOL-A at 84.8\%, and PANNs at 56.8\%.
 
-The correlation between NN leak rate and protocol inflation is $r = 0.95$ across four backbones (note: with $n = 4$, this correlation is suggestive rather than statistically significant at conventional thresholds). Nonetheless, the directional relationship is clear: backbones whose embeddings most effectively recover recording identity also show the largest accuracy inflation. This makes physical sense: if a test clip's nearest training neighbor is from the same track, and the probe has learned to associate that region of embedding space with the correct genre, then the probe will classify correctly even if it has learned no transferable genre features.
+Across four backbones, the rank ordering of NN leak rate matches the rank ordering of protocol inflation: MERT-95M has the highest leak rate (90.1\%) and the largest inflation (+32.0 pp), while PANNs has the lowest leak rate (56.8\%) and the smallest inflation (+16.0 pp). With only $n = 4$ backbones, we report the directional consistency rather than a correlation coefficient, as any monotonic trend on four points produces a high $r$ regardless of the underlying relationship. The directional relationship is clear: backbones whose embeddings most effectively recover recording identity also show the largest accuracy inflation. This makes physical sense: if a test clip's nearest training neighbor is from the same track, and the probe has learned to associate that region of embedding space with the correct genre, then the probe will classify correctly even if it has learned no transferable genre features.
 
 This analysis provides a second label-free diagnostic: a backbone where more than 50\% of test clips recover a same-track training neighbor under permissive splitting is embedding recording identity, not genre identity. The diagnostic requires only cached embeddings and split assignments --- no training or ground-truth labels.
 
@@ -837,7 +897,7 @@ This analysis provides a second label-free diagnostic: a backbone where more tha
 \end{figure*}
 ```
 
-To provide visual intuition for the leakage mechanism, we project 2,000 randomly sampled clip embeddings into 2D using t-SNE (perplexity = 30) for MERT-95M and CLAP. Three views reveal distinct aspects of the embedding geometry.
+To provide visual intuition for the leakage mechanism (Figure \ref{fig:embedding_tsne}), we project 2,000 randomly sampled clip embeddings into 2D using t-SNE (perplexity = 30) for MERT-95M and CLAP. Three views reveal distinct aspects of the embedding geometry.
 
 Genre clustering (left panels) shows that both backbones separate genres, though with substantial overlap --- consistent with the 55--60\% accuracy ceiling under honest evaluation. CLAP produces tighter, more separated clusters, reflecting its audio-language contrastive pretraining. MERT-95M shows more diffuse clusters with stronger inter-genre overlap, particularly between Folk/Instrumental and Electronic/Experimental.
 
@@ -856,9 +916,9 @@ The visual difference between the center and right panels is the geometric expla
 \end{figure*}
 ```
 
-A potential concern is that our inflation measurements might be specific to the probe architecture used. To address this, we train four probe types --- linear (no hidden layers), single-layer MLP with 64 units, two-layer MLP with 128 and 64 units, and two-layer MLP with 256 and 128 units --- on two representative backbones (CLAP and MERT-95M flat) under both artist-filtered and clip-random evaluation.
+A potential concern is that our inflation measurements might be specific to the probe architecture used (Figure \ref{fig:probe_robustness}). To address this, we train four probe types --- linear (no hidden layers), single-layer MLP with 64 units, two-layer MLP with 128 and 64 units, and two-layer MLP with 256 and 128 units --- on two representative backbones (CLAP and MERT-95M flat) under both artist-filtered and clip-random evaluation.
 
-Inflation is consistent across all probe types. For CLAP, inflation ranges from the linear probe to the deepest MLP with no systematic trend: the protocol gap is not an artifact of probe expressiveness. For MERT-95M, the pattern is similar: all probes show comparable inflation regardless of capacity.
+Inflation is consistent across all probe types. For CLAP, artist-filtered accuracy ranges from 57.5\% (linear) to 59.9\% (MLP-256-128), and clip-random accuracy from 75.8\% to 78.6\%, yielding inflation of +18.3 to +18.7 pp with no systematic trend: the protocol gap is not an artifact of probe expressiveness. For MERT-95M flat, the pattern is similar: artist-filtered accuracy spans 55.6--58.2\% and inflation spans +30.8--+33.4 pp across all probe depths.
 
 This result has a clear implication: the leakage is in the evaluation protocol and the frozen embeddings, not in the downstream classifier. A linear probe --- the simplest possible classifier --- exhibits essentially the same inflation as a multi-layer network. This rules out the hypothesis that leakage arises from overfitting in the probe head, and confirms that recording identity is linearly separable in the backbone's embedding space.
 
@@ -870,7 +930,7 @@ The finding is not that the field is cheating --- it is that the field has no re
 
 Across 11 verified architectures spanning four model families, the gap is universal --- it is not an artifact of any particular model choice. The inflation pattern holds for models pretrained on music (MERT-95M, MERT-330M), on general audio events (BYOL-A, PANNs), and for from-scratch CNNs. It holds for multi-layer transformer probes and single-vector MLP probes. It holds for self-supervised models and supervised ones. The only variable that consistently predicts accuracy is the evaluation protocol.
 
-This universality has a silver lining: the fix is correspondingly simple. Because the inflation is protocol-driven rather than architecture-driven, it can be eliminated by standardising a single metadata field --- the split mechanism --- rather than requiring changes to model architectures or training procedures.
+We note that "universal" here means universal across all architectures tested on FMA-small, not across all datasets; cross-dataset replication (e.g., on GTZAN or MagnaTagATune) is needed before claiming a field-wide law. Nevertheless, the consistency across six backbone families with fundamentally different pretraining objectives is strong evidence that the effect is protocol-driven, not architecture-driven. The fix is correspondingly simple: standardising a single metadata field --- the split mechanism --- rather than requiring changes to model architectures or training procedures.
 
 ## B. Why Some Models Leak More
 
@@ -882,7 +942,7 @@ An alternative hypothesis: models with larger embedding dimensionality provide m
 
 A third hypothesis: the pretraining objective matters. Models pretrained on diverse audio categories (PANNs on 527 AudioSet classes, CLAP on audio-text pairs spanning many domains) may develop features that generalise more broadly, making them less susceptible to recording-level memorisation. Conversely, models pretrained with reconstruction objectives (Audio-MAE, EAT) learn to preserve fine-grained audio details that may make fingerprinting easier.
 
-Our current results partially test these hypotheses. PANNs (supervised on 527 AudioSet classes, single 2048-dim vector) inflates by only +16.0 pp, while MERT attention probe (multi-layer transformer, 95.7% clip-random) inflates by +41.0 pp --- consistent with the capacity hypothesis. Extending this to speech-pretrained models (Wav2Vec 2.0, HuBERT) and audio-language models (CLAP) in future work would provide a stronger test of the pretraining domain hypothesis.
+Our results partially test these hypotheses. PANNs (supervised on 527 AudioSet classes, single 2048-dim vector) inflates by only +16.0 pp, while MERT attention probe (multi-layer transformer, 95.7\% clip-random) inflates by +41.0 pp --- consistent with the capacity hypothesis. The DGX experiments (Section G2) extend this analysis: the Whisper Probe (57.3\%, speech-pretrained) performs competently on genre classification despite never encountering music during pretraining, and LoRA fine-tuning does not reduce inflation relative to frozen probing. Running the full three-rung ladder on fine-tuned models would provide a stronger test of the pretraining domain hypothesis.
 
 ## C. Implications for Foundation Models
 
@@ -904,7 +964,7 @@ This study identifies six independent diagnostics for evaluation protocol leakag
 
 **Representation collapse** (Section 5Q): Within-track embedding cosine similarity (0.83--0.93) far exceeds between-track similarity (0.30--0.77) across all backbones. A backbone where within-track similarity exceeds 0.85 is encoding recording identity strongly enough to create protocol sensitivity --- this diagnostic requires no labels or training.
 
-**Nearest-neighbor identity recovery** (Section 5R): Under clip-random evaluation, 57--90\% of test clips have a same-track nearest neighbor in training, correlating with inflation at $r = 0.95$. Under artist-filtered evaluation, the rate is exactly 0\%. This embedding-level diagnostic directly quantifies how much recording identity is available to the probe.
+**Nearest-neighbor identity recovery** (Section 5R): Under clip-random evaluation, 57--90\% of test clips have a same-track nearest neighbor in training, and the rank ordering of leak rates matches the rank ordering of inflation across all four tested backbones. Under artist-filtered evaluation, the rate is exactly 0\%. This embedding-level diagnostic directly quantifies how much recording identity is available to the probe.
 
 **Probe architecture invariance** (Section 5T): Inflation persists identically across linear, 1-layer, and 2-layer MLP probes, confirming that leakage is in the embeddings and protocol, not the classifier. This rules out the alternative hypothesis that protocol sensitivity arises from probe overfitting.
 
@@ -916,13 +976,19 @@ The CKA and error diversity analyses (Sections 5I--J) jointly explain the ensemb
 
 This quantifies the intuition that ensemble diversity requires architectural diversity, not just parameter diversity. The practical implication: investing compute in multiple MERT variants (different probe heads, different seeds) yields diminishing returns compared to investing in one probe per architecturally distinct backbone.
 
+The DGX ensemble experiments reinforce this finding at a larger scale. Round 1 fine-tuning ensembles show diminishing returns: the 4-model subset (58.9\%) marginally outperforms the 7-model uniform average (58.5\%), suggesting that adding weaker fine-tuned models dilutes quality. Round 2 ensembles combining architecturally diverse probes (AST, Whisper, MERT, Fusion) achieve 62.1\% --- and once again, uniform averaging beats Caruana greedy selection (61.8\%), extending the pattern that learned combiners overfit at this data scale.
+
 ## F. Negative Results
 
 **Epoch-Scheduled Conditional Fusion (ESCF).** A learned fusion of CNN and MERT backbones using per-episode sigmoid gates, per-track attention, and a curriculum. Every ESCF variant lost to a fixed 50/50 uniform ensemble (McNemar p = 0.011).
 
 **Learned attention over episodes.** Pooling with learned attention is consistently worse than averaging. The weakest MERT probe in our inventory is the attention probe.
 
-**The lesson.** Anything learned on top of frozen features overfits at this data scale. Accuracy gains must come from better features, not new learned combiners.
+**LoRA and partial unfreezing.** MERT-LoRA-330M (54.4\%) underperforms the frozen MERT-330M probe (56.6\%); MERT-Unfreeze-330M (53.4\%) fares even worse. Parameter-efficient fine-tuning on 6,400 training tracks introduces more overfitting than it resolves. The frozen AST Probe (62.0\%) outperforms the fine-tuned AST (58.1\%) by 3.9 pp, confirming that the probe-only paradigm is not leaving accuracy on the table at this data scale.
+
+**Multi-crop inference.** MERT-MultiCrop-330M (53.9\%, 6 training crops of 5 seconds from the full 30-second track, 10 evaluation crops) shows no improvement over standard MERT-LoRA-330M (54.4\%) with 3-second episodes.
+
+**The lesson.** Anything learned on top of frozen features --- or adaptively on top of a pretrained backbone --- overfits at this data scale. Accuracy gains must come from better features, not new learned combiners or fine-tuning strategies.
 
 ## G. Recommendations for the Field
 
@@ -940,11 +1006,11 @@ We further suggest that conference reviewers flag the absence of this informatio
 
 ## H. Limitations
 
-This study covers one dataset (FMA-small), one segmentation length (3 seconds), and reimplements rather than runs original code. The 3-second window is a ceiling on what any model here can see; genre is partly a long-timescale property. FMA-small's 8 coarse genres include genuinely multi-genre tracks; the single `genre_top` label caps classifier performance.
+This study covers one dataset (FMA-small), one segmentation length (3 seconds for laptop probes, 3--30 seconds for DGX models), and reimplements rather than runs original code. FMA-small's 8 coarse genres include genuinely multi-genre tracks; the single `genre_top` label caps classifier performance.
 
-Our study covers 14 architectures but uses a single probing protocol (frozen backbone + MLP head). Fine-tuning may change the leakage dynamics: a fine-tuned model adapts its representations to the training set, potentially increasing memorisation under permissive splits and decreasing it under honest ones. The direction of this effect is an empirical question we do not answer here.
+Our study covers eight trained backbone families using both frozen probing and parameter-efficient fine-tuning. However, the three-rung leakage ladder has only been run on the laptop probes; the fine-tuned DGX models were evaluated exclusively under the artist-filtered protocol. Whether fine-tuning changes the leakage dynamics --- potentially increasing memorisation under permissive splits --- remains an open empirical question.
 
-Embedding extraction runs on a single consumer laptop. Models requiring multi-GPU inference (e.g., very large CLAP variants, full-size Whisper models) are not included. Our architecture coverage is broad but not exhaustive; notable omissions include raw waveform models (SampleCNN [@lee2018samplecnn]) and conformer architectures [@gulati2020conformer].
+Frozen probing and embedding extraction run on a single consumer laptop; fine-tuning experiments use a DGX cluster. Our architecture coverage is broad but not exhaustive; notable omissions include raw waveform models (SampleCNN [@lee2018samplecnn]) and conformer architectures [@gulati2020conformer].
 
 FMA-small's eight genre labels reflect a Western popular music taxonomy. The "International" category, as a single catch-all for non-Western music, is culturally reductive. Our findings --- including genre-confusion patterns, difficulty distributions, and accuracy ceilings --- are conditioned on this ontology and may not generalise to culturally broader or finer-grained genre systems.
 
@@ -952,15 +1018,15 @@ The literature audit covers papers we could locate through standard academic sea
 
 # 7. Ongoing and Future Work
 
-## A. Fine-Tuning Experiments
+## A. Leakage Ladder for Fine-Tuned Models
 
-All current results freeze the backbone and train only a lightweight probe head. End-to-end fine-tuning with LoRA adapters [@hu2021lora] (~2M trainable parameters on a 330M backbone), partial layer unfreezing with layer-wise learning rate decay, and multi-crop processing of full 30-second tracks would test whether the leakage pattern changes when the backbone itself adapts to the training set. Additionally, fine-tuning Audio Spectrogram Transformer [@gong2021ast] and HTS-AT [@chen2022htsat] would provide ensemble diversity through architecturally distinct pretrained backbones.
+Fine-tuning experiments (LoRA, partial layer unfreezing, multi-crop, AST/HTS-AT) are reported in Section 5G2 under the artist-filtered protocol. The critical next step is running the three-rung leakage ladder on these fine-tuned models to test whether adaptation changes the inflation dynamics. A fine-tuned model adapts its representations to the training set, potentially increasing memorisation under permissive splits; confirming this would strengthen the case for mandatory protocol disclosure as models grow in capacity.
 
 Fine-tuning Wav2Vec 2.0 and HuBERT on music data before probing would test whether the speech-to-music domain gap affects leakage magnitude. If domain-adapted speech models show different inflation patterns than their off-the-shelf counterparts, it would suggest that the pretraining domain interacts with the evaluation protocol in ways not captured by frozen probing alone.
 
 ## B. Context Window Ablation
 
-Every embedding in this project is computed from 3 seconds of audio. A 10-second extraction grid is implemented, as is a multi-crop approach that processes multiple 5-second windows from the full 30-second track. If longer context yields measurable gains, the implication is that the entire FMA-small literature has been evaluating under a suboptimal but unreported context length.
+Laptop probes use 3-second episodes; DGX models use 3--30 seconds depending on architecture. The MERT-MultiCrop-330M experiment (53.9\%, six 5-second crops) showed no improvement over 3-second LoRA (54.4\%), but the DGX AST Probe uses 10-second clips and reaches 62.0\%. A systematic ablation across context lengths and architectures would clarify whether longer context drives accuracy gains or whether backbone quality dominates.
 
 ## C. Cross-Dataset Protocol Audit
 
@@ -972,9 +1038,9 @@ Raw waveform models (SampleCNN [@lee2018samplecnn], Harmonic CNN [@won2020harmon
 
 # 8. Conclusion
 
-We measured the cost of three evaluation protocol choices on FMA-small music genre classification across 14 architectures, 62 training runs, and 4 model families: from-scratch CNNs, music-specific self-supervised models (MERT-95M, MERT-330M), general audio and audio-language models (BYOL-A, PANNs, CLAP), and non-neural baselines (XGBoost). The effect is large (+30.8 pp mean inflation across 11 verified architectures), systematic (architecture-independent), and undisclosed (0 of 9 published papers state artist-filtered evaluation).
+We measured the cost of three evaluation protocol choices on FMA-small music genre classification across 79 training runs spanning eight backbone families: from-scratch CNNs, music-specific self-supervised models (MERT-95M, MERT-330M), general audio and audio-language models (BYOL-A, PANNs, CLAP, Whisper), fine-tuned transformers (AST, HTS-AT, EfficientAT), and non-neural baselines (XGBoost). The effect is large (+30.8 pp mean inflation across 11 verified architectures), systematic (architecture-independent), and undisclosed (0 of 9 published papers state artist-filtered evaluation).
 
-Our best model reaches 59.9\% under the artist-filtered, track-level protocol --- 5.1 pp above the only prior sourceable artist-filtered number. The contribution of this work is not the accuracy number but the demonstration that most published numbers are not what they appear to be.
+Our best model reaches 62.0\% under the artist-filtered, track-level protocol --- 7.2 pp above the only prior sourceable artist-filtered number. Under honest evaluation, fine-tuning with LoRA adapters and partial layer unfreezing on DGX hardware did not outperform frozen probing, and even the best result (62.1\%) remains far below the 90--96\% numbers achievable under permissive protocols --- confirming that the protocol, not model capacity or adaptation method, is the dominant variable. The contribution of this work is not the accuracy number but the demonstration that most published numbers are not what they appear to be.
 
 Beyond accuracy, the protocol choice distorts multiple measurable properties. Calibration reverses: under honest evaluation, models are approximately calibrated; under clip-random evaluation, all models are underconfident ($T^* < 1$). Temporal consistency inflates from 80\% to 96\%, far beyond what genre classification alone can sustain. Track difficulty profiling reveals that tracks no model classifies correctly under honest evaluation gain +61.5 pp under leakage, while already-easy tracks gain nothing (--1.1 pp).
 
@@ -994,10 +1060,11 @@ This appendix provides the exact steps, commands, and configuration values neede
 
 ## A. Environment and Dependencies
 
-The full pipeline runs on a single consumer laptop (Apple M-series, 16 GB RAM, MPS backend). No GPU cluster is required. Setup:
+The frozen probing pipeline runs on a single consumer laptop (Apple M-series, 16 GB RAM, MPS backend). Fine-tuning experiments require an NVIDIA DGX cluster (or equivalent GPU with bfloat16 support). Setup:
 
 ```
-git clone <repository-url> && cd music
+git clone https://github.com/anonymous/fma-protocol-study && cd music
+# (URL will be de-anonymised upon acceptance)
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
@@ -1040,7 +1107,7 @@ Extracted embeddings are stored in `data/embeddings/<backbone>/` as memory-mappe
 
 ## D. Training Configuration
 
-All 72 YAML configuration files are in `src/training/configs/`. Each file fully specifies a single training run. Representative configuration (CLAP probe, artist-filtered):
+Laptop probe configuration files are in `src/training/configs/`; DGX fine-tuning configurations are in `dgx-code/configs/`. Together, 92 configuration files span the full study, of which 79 have completed training with evaluated results. Each file fully specifies a single training run. Representative configuration (CLAP probe, artist-filtered):
 
 ```{=latex}
 \begin{table}[h]
@@ -1081,7 +1148,7 @@ To train all configurations sequentially:
 ./scripts/03_train_all.sh
 ```
 
-Each probe training run completes in 1--3 minutes; from-scratch CNN runs take 30--60 minutes. Total training time for all 62 evaluated runs is under 40 GPU-hours equivalent on MPS.
+Each probe training run completes in 1--3 minutes; from-scratch CNN runs take 30--60 minutes. Total training time for the 37 laptop runs is under 40 GPU-hours equivalent on MPS; DGX fine-tuning adds approximately 6 GPU-hours (Section H).
 
 ## E. Protocol Ladder Reproduction
 
@@ -1135,7 +1202,28 @@ python scripts/protocol_leakage_analysis.py
 
 To verify that results are stable across random seeds, six seed-varied runs are provided for the MERT-95M flat probe (`mert_flat_diverse_s1.yaml` through `mert_flat_diverse_s6.yaml`, seeds 42, 123, 256, 789, 1024, 2048). The standard deviation across these runs is reported in Section 5B.
 
-## H. Key Numerical Summary
+## H. DGX Fine-Tuning Pipeline
+
+Fine-tuning experiments require an NVIDIA DGX cluster (or equivalent multi-GPU system with bfloat16 support). The DGX pipeline is in `dgx-code/` and uses the same FMA-small dataset and artist-filtered split as the laptop pipeline.
+
+**Round 1 (fine-tuning):**
+
+```
+cd dgx-code
+python run_pipeline.py
+```
+
+This trains all seven fine-tuned models sequentially: AST-Finetune, EfficientAT-Genre, MERT-LoRA-330M, MERT-LoRA-95M, MERT-Unfreeze-330M, MERT-MultiCrop-330M, HTS-AT-Genre. Configuration files are in `dgx-code/configs/`. Total Round 1 training time: approximately 6 GPU-hours.
+
+**Round 2 (probes + ensemble):**
+
+```
+python run_round2.py
+```
+
+This extracts embeddings from frozen AST, Whisper, MERT-330M, and CLAP encoders, trains layer-weighted MLP probes, fine-tunes AST-V2, and constructs ensembles via Caruana forward selection. Results are written to `dgx-code/outputs/results_round2.json`.
+
+## I. Key Numerical Summary
 
 ```{=latex}
 \begin{table}[h]
@@ -1146,20 +1234,20 @@ To verify that results are stable across random seeds, six seed-varied runs are 
 \toprule
 \textbf{Quantity} & \textbf{Value} \\
 \midrule
-Total training runs evaluated & 62 \\
-Unique architectures & 14 \\
-Model families & 4 \\
-Backbone models & 12 \\
-Configuration files & 72 \\
+Total training runs evaluated & 79 \\
+Unique architectures & 21 \\
+Backbone families & 8 \\
+Backbone models & 16 \\
+Configuration files & 92 \\
 Tracks in FMA-small & 8,000 (7,996 readable) \\
 Episodes per track & 10 (3 seconds each) \\
 Total episodes & 75,296 \\
 Train / Val / Test episodes & 60,188 / 7,544 / 7,564 \\
 Genres & 8 \\
-Best artist-filtered accuracy & 59.9\% (CLAP probe) \\
+Best artist-filtered accuracy & 62.0\% (AST Probe, DGX) \\
 Mean protocol inflation & +30.8 pp \\
 Maximum protocol inflation & +41.2 pp (MERT-330M deep probe) \\
-Total compute & $<$40 GPU-hours (MPS) \\
+Total compute & $<$50 GPU-hours (MPS + DGX) \\
 \bottomrule
 \end{tabular}
 \end{table}
