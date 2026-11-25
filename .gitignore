@@ -48,6 +48,9 @@ CLAUDE.md
 # Personal study notes
 study/
 
+# Docs — private, not for public repo
+docs/
+
 # Docs figures generated at eval time (kept out unless explicitly added)
 docs/figures/*.png
 
